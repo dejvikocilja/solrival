@@ -1,0 +1,25 @@
+# deps
+node_modules/
+.pnpm-store/
+# build
+.next/
+dist/
+out/
+.turbo/
+# env
+.env
+.env.local
+.env.*.local
+# prisma
+packages/db/prisma/*.db
+# anchor / rust
+programs/**/target/
+programs/**/.anchor/
+**/*.rs.bk
+# keys — NEVER commit
+*.keypair.json
+result-authority*.json
+# misc
+.DS_Store
+coverage/
+*.log

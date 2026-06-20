@@ -1,0 +1,11 @@
+{
+  "name": "@solrival/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tailwind/preset": "./tailwind/preset.ts",
+    "./eslint/base": "./eslint/base.mjs",
+    "./typescript/base": "../../tsconfig.base.json"
+  }
+}

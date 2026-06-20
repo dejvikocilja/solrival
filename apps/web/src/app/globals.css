@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Arena base */
+  --bg: 222 30% 5%;
+  --bg-raised: 225 24% 8%;
+  --surface: 225 22% 11%;
+  --surface-2: 226 22% 15%;
+  --border: 226 18% 21%;
+  --border-strong: 226 16% 30%;
+
+  /* Text */
+  --fg: 222 30% 96%;
+  --muted: 222 12% 66%;
+  --faint: 222 10% 46%;
+
+  /* Functional accents */
+  --rival: 250 100% 68%;
+  --rival-fg: 0 0% 100%;
+  --victory: 168 76% 54%;
+  --ember: 38 100% 56%;
+  --danger: 354 100% 70%;
+
+  /* Per-game identity */
+  --cr: 222 100% 63%;
+  --bs: 280 100% 66%;
+
+  --ring: 250 100% 68%;
+  --radius: 0.875rem;
+
+  color-scheme: dark;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
+}
+
+body {
+  background-color: hsl(var(--bg));
+  color: hsl(var(--fg));
+  font-feature-settings: "ss01", "cv01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient arena glow behind the page — quiet, single source. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60rem 40rem at 80% -10%, hsl(var(--rival) / 0.10), transparent 60%),
+    radial-gradient(50rem 36rem at 0% 0%, hsl(var(--cr) / 0.06), transparent 55%);
+  pointer-events: none;
+}
+
+::selection {
+  background: hsl(var(--rival) / 0.35);
+}
+
+/* Numeric data (SOL, stats) — tabular, mono, precise */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "zero";
+}
+
+@layer utilities {
+  .focus-ring {
+    @apply outline-none ring-2 ring-ring/70 ring-offset-2 ring-offset-bg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

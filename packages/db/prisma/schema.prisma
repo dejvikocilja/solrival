@@ -1,0 +1,814 @@
+// =============================================================================
+// SolRival — Prisma schema (build step 2)
+// Postgres 15 (Supabase). Money stored as BigInt lamports. Keys are DB-native
+// uuid via gen_random_uuid() (built into PG13+). Columns mapped to snake_case.
+// CHECK constraints + partial indexes are added in a follow-up raw-SQL migration
+// (see migration notes) because Prisma cannot express them in-schema.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = []
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (pgbouncer) at runtime
+  directUrl = env("DIRECT_URL")   // direct connection for migrations
+}
+
+// ============================ ENUMS ==========================================
+
+enum UserRole {
+  PLAYER
+  ADMIN
+}
+
+enum WalletProvider {
+  PHANTOM
+  SOLFLARE
+  BACKPACK
+}
+
+enum Game {
+  CLASH_ROYALE
+  BRAWL_STARS
+}
+
+/// Predefined, verifiable rule templates only (spec: no custom modes).
+enum RuleTemplate {
+  CR_TRIPLE_DRAFT
+  CR_DRAFT
+  CR_CLASSIC_DECK
+  CR_SUDDEN_DEATH
+  BS_KNOCKOUT
+  BS_BRAWL_BALL
+  BS_GEM_GRAB
+}
+
+enum DuelVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum DuelStatus {
+  CREATED
+  WAITING_FOR_OPPONENT
+  ACCEPTED
+  ACTIVE
+  VERIFYING
+  COMPLETED
+  EXPIRED
+  CANCELLED
+  DISPUTED
+  REFUNDED
+}
+
+enum EscrowTxType {
+  DEPOSIT_CREATOR
+  DEPOSIT_OPPONENT
+  PAYOUT_WINNER
+  PAYOUT_FEE
+  REFUND_CREATOR
+  REFUND_OPPONENT
+}
+
+enum EscrowTxStatus {
+  PENDING
+  SUBMITTED
+  CONFIRMED
+  FAILED
+}
+
+enum VerificationJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  RETRYING
+  DEAD_LETTER
+}
+
+enum VerificationOutcome {
+  VERIFIED_WINNER
+  VERIFICATION_FAILURE
+  DISPUTE
+}
+
+enum TournamentFormat {
+  SINGLE_ELIMINATION
+}
+
+enum TournamentStatus {
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TournamentPlayerStatus {
+  REGISTERED
+  ACTIVE
+  ELIMINATED
+  WINNER
+  WITHDRAWN
+}
+
+enum MatchStatus {
+  PENDING
+  READY
+  ACTIVE
+  VERIFYING
+  COMPLETED
+  BYE
+  DISPUTED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_CREATOR_WIN
+  RESOLVED_OPPONENT_WIN
+  RESOLVED_REFUND
+  REJECTED
+}
+
+enum AdminAuditAction {
+  TOURNAMENT_CREATED
+  TOURNAMENT_UPDATED
+  TOURNAMENT_CANCELLED
+  BRACKET_GENERATED
+  PRIZE_POOL_ADJUSTED
+  DISPUTE_OPENED
+  DISPUTE_RESOLVED
+  DUEL_FORCE_REFUNDED
+  VERIFICATION_OVERRIDDEN
+  USER_ROLE_CHANGED
+  USER_SUSPENDED
+  WITHDRAWAL_APPROVED
+  WITHDRAWAL_REJECTED
+  BALANCE_ADJUSTED
+}
+
+// ============================ CREDITS / BALANCE ==============================
+
+/// How a duel's stakes are funded & settled.
+///  - CREDITS:        debited from each player's in-platform GGDUEL balance (default).
+///  - ONCHAIN_ESCROW: legacy per-duel on-chain escrow (kept for back-compat).
+enum DuelFundingMode {
+  CREDITS
+  ONCHAIN_ESCROW
+}
+
+/// Append-only ledger movement types. Every change to a UserBalance is recorded
+/// as one signed entry (delta_available / delta_locked) with the resulting
+/// snapshot, so the balance is always reconstructable and auditable.
+enum LedgerEntryType {
+  DEPOSIT_CREDIT      // + available  (net of deposit fee)
+  STAKE_LOCK          // - available, + locked   (duel created/accepted)
+  STAKE_REFUND        // - locked, + available   (duel cancelled/refunded)
+  STAKE_FORFEIT       // - locked                (loser's stake leaves to winner)
+  DUEL_PAYOUT         // + available             (winner receives full pot)
+  WITHDRAWAL_LOCK     // - available, + locked   (withdrawal requested)
+  WITHDRAWAL_SETTLE   // - locked                (withdrawal paid out on-chain)
+  WITHDRAWAL_REVERT   // - locked, + available   (withdrawal rejected/failed)
+  REFERRAL_REWARD     // + available             (referrer earns on referee deposit)
+  ADMIN_ADJUSTMENT    // +/- available           (manual correction, audited)
+  TOURNAMENT_ENTRY_LOCK    // - available, + locked  (tournament registration; fee joins the pool)
+  TOURNAMENT_ENTRY_REFUND  // - locked, + available  (tournament cancelled before completion)
+  TOURNAMENT_ENTRY_FORFEIT // - locked               (entry fee leaves to the prize pool on completion)
+  TOURNAMENT_PRIZE         // + available            (placement payout from the prize pool)
+}
+
+enum DepositStatus {
+  DETECTED    // signature submitted, not yet verified
+  CONFIRMED   // verified on-chain (finalized, to treasury, from user wallet)
+  CREDITED    // balance credited (terminal, happy path)
+  REJECTED    // failed verification / duplicate / wrong recipient
+}
+
+/// Withdrawal lifecycle. Funds are locked at request time and only ever leave
+/// the platform on COMPLETED; REJECTED/FAILED revert the lock to available.
+enum WithdrawalStatus {
+  PENDING_REVIEW   // user has an active dispute -> awaits admin decision
+  APPROVED         // auto-approved or admin-approved; queued for treasury payout
+  PROCESSING       // treasury transfer submitted to chain
+  COMPLETED        // payout finalized on-chain (terminal)
+  REJECTED         // admin rejected; locked funds reverted (terminal)
+  FAILED           // on-chain payout failed; locked funds reverted/retryable
+}
+
+enum ReferralRewardStatus {
+  PENDING
+  CREDITED
+  VOID
+}
+
+// ============================ AUTH ===========================================
+
+/// Single-use Sign-In With Solana challenge. The server stores the exact message
+/// it issued and verifies the wallet signature against THAT text (never against
+/// a client-supplied string). consumed_at enforces one-time use; expired/consumed
+/// rows are swept by a background job.
+model AuthChallenge {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress String    @map("wallet_address")
+  nonce         String    @unique
+  message       String                                   // exact bytes the wallet must sign
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt    DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([walletAddress])
+  @@index([expiresAt])
+  @@map("auth_challenges")
+}
+
+// ============================ CORE IDENTITY ==================================
+
+model User {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletAddress  String         @unique @map("wallet_address") // full base58; shortened only in UI
+  walletProvider WalletProvider? @map("wallet_provider")
+  username       String         @unique
+  role           UserRole       @default(PLAYER)
+
+  // denormalized platform record (source of truth = duel results; updated in tx)
+  wins           Int            @default(0)
+  losses         Int            @default(0)
+
+  suspended      Boolean        @default(false)
+  lastSeenAt     DateTime?      @map("last_seen_at") @db.Timestamptz(6)
+
+  // referral graph: who invited this user, and this user's own shareable code
+  referralCode   String         @unique @map("referral_code")
+  referredById   String?        @map("referred_by_id") @db.Uuid
+
+  // audit
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // relations
+  gameAccounts       GameAccount[]
+  createdDuels       Duel[]             @relation("DuelCreator")
+  opponentDuels      Duel[]             @relation("DuelOpponent")
+  wonDuels           Duel[]             @relation("DuelWinner")
+  detectedWins       VerificationJob[]  @relation("VerificationDetectedWinner")
+  createdTournaments Tournament[]       @relation("TournamentCreatedBy")
+  wonTournaments     Tournament[]       @relation("TournamentWinner")
+  tournamentEntries  TournamentPlayer[]
+  raisedDisputes     Dispute[]          @relation("DisputeRaisedBy")
+  resolvedDisputes   Dispute[]          @relation("DisputeResolvedBy")
+  auditLogs          AdminAuditLog[]    @relation("AuditAdmin")
+
+  // credits / custody
+  balance            UserBalance?
+  ledgerEntries      LedgerEntry[]
+  deposits           Deposit[]
+  withdrawals        WithdrawalRequest[]
+  reviewedWithdrawals WithdrawalRequest[] @relation("WithdrawalReviewer")
+
+  // referrals
+  referredBy         User?              @relation("UserReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referredUsers      User[]             @relation("UserReferral")
+  referralsMade      Referral[]         @relation("ReferralReferrer")
+  referralReceived   Referral?          @relation("ReferralReferee")
+
+  @@index([role])
+  @@index([createdAt])
+  @@index([referredById])
+  @@map("users")
+}
+
+/// A player's linked in-game account. Trophies/level/win-rate power marketplace
+/// filters; in_game_tag is what the verifier matches against battle-log players.
+model GameAccount {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  game        Game
+  inGameTag   String   @map("in_game_tag")        // e.g. Supercell player tag (#ABC123)
+  friendLink  String?  @map("friend_link")         // default link; per-duel link snapshotted on Duel
+  trophies    Int?                                  // marketplace filter
+  accountLevel Int?    @map("account_level")        // marketplace filter
+  winRateBps  Int?     @map("win_rate_bps")         // in-game win rate, 0..10000
+  verified    Boolean  @default(false)              // ownership proven
+  lastSyncedAt DateTime? @map("last_synced_at") @db.Timestamptz(6)
+
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user                User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  creatorDuels        Duel[]             @relation("DuelCreatorAccount")
+  opponentDuels       Duel[]             @relation("DuelOpponentAccount")
+  tournamentEntries   TournamentPlayer[]
+
+  @@unique([userId, game])          // one account per game per user (V1)
+  @@unique([game, inGameTag])       // a tag can be claimed by only one user
+  @@index([game, trophies])
+  @@index([game, accountLevel])
+  @@index([game, winRateBps])
+  @@index([userId])
+  @@map("game_accounts")
+}
+
+// ============================ RULE REGISTRY ==================================
+
+/// Predefined, verifiable templates. Duels FK to this so only approved,
+/// verifier-supported modes can ever be used (spec: no custom modes).
+model DuelRule {
+  id                 String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  game               Game
+  template           RuleTemplate @unique
+  mode               String       // canonical in-game mode label used for detection
+  displayName        String       @map("display_name")
+  description        String
+  verificationConfig Json         @map("verification_config") // how the verifier detects this mode
+  enabled            Boolean      @default(true)
+
+  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  duels       Duel[]
+  tournaments Tournament[]
+
+  @@unique([game, template])
+  @@index([game, enabled])
+  @@map("duel_rules")
+}
+
+// ============================ DUELS ==========================================
+
+model Duel {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shortCode     String         @unique @map("short_code")   // human-friendly display id
+  inviteToken   String?        @unique @map("invite_token") // private shareable-link token
+
+  game          Game
+  visibility    DuelVisibility  @default(PUBLIC)
+  status        DuelStatus      @default(CREATED)
+  fundingMode   DuelFundingMode @default(CREDITS) @map("funding_mode") // CREDITS = GGDUEL balance
+
+  // participants
+  creatorId            String  @map("creator_id") @db.Uuid
+  opponentId           String? @map("opponent_id") @db.Uuid
+  creatorGameAccountId String? @map("creator_game_account_id") @db.Uuid
+  opponentGameAccountId String? @map("opponent_game_account_id") @db.Uuid
+  creatorFriendLink    String  @map("creator_friend_link")    // snapshot at creation
+  opponentFriendLink   String? @map("opponent_friend_link")   // snapshot at acceptance
+
+  ruleId        String         @map("rule_id") @db.Uuid
+
+  // money (lamports) — snapshots ensure UI/settlement consistency
+  stakeLamports          BigInt  @map("stake_lamports")          // per player
+  platformFeeBps         Int     @map("platform_fee_bps")        // snapshot of fee at creation
+  winnerPayoutLamports   BigInt? @map("winner_payout_lamports")  // set at settlement
+  feeCollectedLamports   BigInt? @map("fee_collected_lamports")  // set at settlement
+
+  // on-chain binding (spec: escrow binds funds to a specific duel identifier)
+  escrowSeed    String  @unique @map("escrow_seed")  // PDA seed, unique per duel
+  escrowPda     String? @unique @map("escrow_pda")   // derived escrow account address
+
+  winnerId      String? @map("winner_id") @db.Uuid
+
+  // lifecycle timestamps (drive the duel timeline + audit)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6) // created_at + 30m
+  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(6)
+  escrowFundedAt DateTime? @map("escrow_funded_at") @db.Timestamptz(6)
+  activatedAt    DateTime? @map("activated_at") @db.Timestamptz(6)
+  verifyingAt    DateTime? @map("verifying_at") @db.Timestamptz(6)
+  settledAt      DateTime? @map("settled_at") @db.Timestamptz(6)
+
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // relations
+  creator            User         @relation("DuelCreator", fields: [creatorId], references: [id], onDelete: Restrict)
+  opponent           User?        @relation("DuelOpponent", fields: [opponentId], references: [id], onDelete: Restrict)
+  winner             User?        @relation("DuelWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+  creatorGameAccount GameAccount? @relation("DuelCreatorAccount", fields: [creatorGameAccountId], references: [id], onDelete: SetNull)
+  opponentGameAccount GameAccount? @relation("DuelOpponentAccount", fields: [opponentGameAccountId], references: [id], onDelete: SetNull)
+  rule               DuelRule     @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+
+  escrowTransactions EscrowTransaction[]
+  ledgerEntries      LedgerEntry[]
+  verificationJob    VerificationJob?
+  dispute            Dispute?
+  tournamentMatch    TournamentMatch?    @relation("MatchDuel")
+
+  // hot path: marketplace = public + open status, sorted by expiry
+  @@index([visibility, status, expiresAt])
+  @@index([game, status])
+  @@index([status, expiresAt])
+  @@index([creatorId])
+  @@index([opponentId])
+  @@index([stakeLamports])
+  @@index([createdAt])
+  // L-008: indexes on remaining FK fields
+  @@index([winnerId])
+  @@index([ruleId])
+  @@index([creatorGameAccountId])
+  @@index([opponentGameAccountId])
+  @@map("duels")
+}
+
+// ============================ ESCROW LEDGER ==================================
+
+/// Append-style ledger of on-chain movements for a duel. signature + a caller
+/// supplied idempotency_key are both unique -> prevents double settlement.
+model EscrowTransaction {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  duelId         String         @map("duel_id") @db.Uuid
+  type           EscrowTxType
+  status         EscrowTxStatus @default(PENDING)
+  amountLamports BigInt         @map("amount_lamports")
+
+  fromWallet     String?        @map("from_wallet")
+  toWallet       String?        @map("to_wallet")
+
+  signature      String?        @unique          // Solana tx signature once submitted
+  slot           BigInt?
+  blockTime      DateTime?      @map("block_time") @db.Timestamptz(6)
+  idempotencyKey String         @unique @map("idempotency_key")
+  error          String?
+
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  duel           Duel           @relation(fields: [duelId], references: [id], onDelete: Restrict)
+
+  @@index([duelId])
+  @@index([type, status])
+  @@index([status, createdAt])
+  @@map("escrow_transactions")
+}
+
+// ============================ VERIFICATION ===================================
+
+/// Exactly one verification record per duel (duel_id unique) -> idempotent.
+/// Retries increment attempts; raw provider evidence retained for audit.
+model VerificationJob {
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  duelId           String                @unique @map("duel_id") @db.Uuid
+  status           VerificationJobStatus  @default(QUEUED)
+  outcome          VerificationOutcome?
+  attempts         Int                    @default(0)
+  maxAttempts      Int                    @default(40) @map("max_attempts")
+
+  detectedWinnerId String?               @map("detected_winner_id") @db.Uuid
+  detectedBattleId String?               @map("detected_battle_id") // provider battle record id
+  matchedBattleAt  DateTime?             @map("matched_battle_at") @db.Timestamptz(6)
+  providerResponse Json?                 @map("provider_response")  // evidence snapshot
+  lastError        String?               @map("last_error")
+
+  scheduledAt      DateTime?             @map("scheduled_at") @db.Timestamptz(6)
+  startedAt        DateTime?             @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime?             @map("completed_at") @db.Timestamptz(6)
+
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  duel             Duel                  @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  detectedWinner   User?                 @relation("VerificationDetectedWinner", fields: [detectedWinnerId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([outcome])
+  @@index([detectedBattleId])
+  @@index([detectedWinnerId]) // L-008: FK index
+  @@map("verification_jobs")
+}
+
+// ============================ TOURNAMENTS ====================================
+
+model Tournament {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String
+  game               Game
+  format             TournamentFormat @default(SINGLE_ELIMINATION)
+  status             TournamentStatus @default(DRAFT)
+
+  entryFeeLamports   BigInt           @map("entry_fee_lamports")
+  maxParticipants    Int              @map("max_participants")
+  prizeDistribution  Json             @map("prize_distribution") // [{place:1,bps:7000},...]
+  prizePoolLamports  BigInt           @default(0) @map("prize_pool_lamports")
+
+  startTime          DateTime         @map("start_time") @db.Timestamptz(6)
+  registrationClosesAt DateTime?      @map("registration_closes_at") @db.Timestamptz(6)
+
+  ruleId             String?          @map("rule_id") @db.Uuid
+  createdByAdminId   String           @map("created_by_admin_id") @db.Uuid
+  winnerId           String?          @map("winner_id") @db.Uuid
+
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rule           DuelRule?          @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  createdByAdmin User               @relation("TournamentCreatedBy", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  winner         User?              @relation("TournamentWinner", fields: [winnerId], references: [id], onDelete: Restrict)
+  players        TournamentPlayer[]
+  matches        TournamentMatch[]
+  ledgerEntries  LedgerEntry[]
+
+  @@index([status, startTime])
+  @@index([game, status])
+  @@index([startTime])
+  // L-008: FK indexes
+  @@index([ruleId])
+  @@index([createdByAdminId])
+  @@index([winnerId])
+  @@map("tournaments")
+}
+
+model TournamentPlayer {
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId   String                 @map("tournament_id") @db.Uuid
+  userId         String                 @map("user_id") @db.Uuid
+  gameAccountId  String?                @map("game_account_id") @db.Uuid
+  friendLink     String?                @map("friend_link")
+  status         TournamentPlayerStatus @default(REGISTERED)
+  seed           Int?
+  finalPlacement Int?                   @map("final_placement")
+  entryTxSignature String?              @unique @map("entry_tx_signature") // entry-fee payment
+  eliminatedAt   DateTime?              @map("eliminated_at") @db.Timestamptz(6)
+
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tournament    Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  gameAccount   GameAccount? @relation(fields: [gameAccountId], references: [id], onDelete: SetNull)
+
+  matchesAsPlayerOne TournamentMatch[] @relation("MatchPlayerOne")
+  matchesAsPlayerTwo TournamentMatch[] @relation("MatchPlayerTwo")
+  matchesWon         TournamentMatch[] @relation("MatchWinner")
+
+  @@unique([tournamentId, userId]) // no double registration
+  @@index([tournamentId, status])
+  @@index([userId])
+  @@index([gameAccountId]) // L-008: FK index
+  @@map("tournament_players")
+}
+
+model TournamentMatch {
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tournamentId    String      @map("tournament_id") @db.Uuid
+  round           Int
+  bracketPosition Int         @map("bracket_position")
+  status          MatchStatus @default(PENDING)
+
+  playerOneId     String?     @map("player_one_id") @db.Uuid
+  playerTwoId     String?     @map("player_two_id") @db.Uuid
+  winnerId        String?     @map("winner_id") @db.Uuid
+
+  duelId          String?     @unique @map("duel_id") @db.Uuid // backing duel
+  nextMatchId     String?     @map("next_match_id") @db.Uuid   // winner advances here
+
+  scheduledAt     DateTime?   @map("scheduled_at") @db.Timestamptz(6)
+  completedAt     DateTime?   @map("completed_at") @db.Timestamptz(6)
+
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tournament  Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  playerOne   TournamentPlayer? @relation("MatchPlayerOne", fields: [playerOneId], references: [id], onDelete: SetNull)
+  playerTwo   TournamentPlayer? @relation("MatchPlayerTwo", fields: [playerTwoId], references: [id], onDelete: SetNull)
+  winner      TournamentPlayer? @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  duel        Duel?             @relation("MatchDuel", fields: [duelId], references: [id], onDelete: SetNull)
+  nextMatch   TournamentMatch?  @relation("BracketProgression", fields: [nextMatchId], references: [id], onDelete: SetNull)
+  previousMatches TournamentMatch[] @relation("BracketProgression")
+
+  @@unique([tournamentId, round, bracketPosition])
+  @@index([tournamentId, status])
+  @@index([tournamentId, round])
+  @@index([nextMatchId])
+  // L-008: FK indexes for player lookups
+  @@index([playerOneId])
+  @@index([playerTwoId])
+  @@index([winnerId])
+  @@map("tournament_matches")
+}
+
+// ============================ DISPUTES =======================================
+
+model Dispute {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  duelId           String        @unique @map("duel_id") @db.Uuid // one dispute per duel
+  status           DisputeStatus @default(OPEN)
+  reason           String?
+  raisedById       String?       @map("raised_by_id") @db.Uuid // null = system-raised
+  resolvedByAdminId String?      @map("resolved_by_admin_id") @db.Uuid
+  resolutionNotes  String?       @map("resolution_notes")
+  resolvedAt       DateTime?     @map("resolved_at") @db.Timestamptz(6)
+
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  duel            Duel  @relation(fields: [duelId], references: [id], onDelete: Restrict)
+  raisedBy        User? @relation("DisputeRaisedBy", fields: [raisedById], references: [id], onDelete: SetNull)
+  resolvedByAdmin User? @relation("DisputeResolvedBy", fields: [resolvedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([resolvedByAdminId])
+  @@index([createdAt])
+  @@index([raisedById]) // L-008: FK index
+  @@map("disputes")
+}
+
+// ============================ AUDIT LOG ======================================
+
+/// Append-only. No updatedAt — rows are immutable once written.
+model AdminAuditLog {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId    String           @map("admin_id") @db.Uuid
+  action     AdminAuditAction
+  entityType String           @map("entity_type") // "Duel" | "Tournament" | "Dispute" | "User"
+  entityId   String           @map("entity_id") @db.Uuid
+  metadata   Json?            // before/after, params, justification
+  ipAddress  String?          @map("ip_address") @db.Inet
+  userAgent  String?          @map("user_agent")
+
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  admin      User             @relation("AuditAdmin", fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId, createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("admin_audit_log")
+}
+
+// ============================ CREDITS: BALANCE ===============================
+
+/// One row per user; the authoritative custodial balance. `available` is
+/// spendable now; `locked` is reserved by active duels and in-flight
+/// withdrawals. available + locked = the user's claim on the treasury.
+/// `version` gives optimistic-concurrency; all mutations go through guarded
+/// conditional updates inside a transaction that also writes a LedgerEntry.
+model UserBalance {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                   String   @unique @map("user_id") @db.Uuid
+
+  availableLamports        BigInt   @default(0) @map("available_lamports")
+  lockedLamports           BigInt   @default(0) @map("locked_lamports")
+
+  // lifetime stats (denormalized, for profile + admin; never used for spend math)
+  lifetimeDepositedLamports BigInt  @default(0) @map("lifetime_deposited_lamports")
+  lifetimeWithdrawnLamports BigInt  @default(0) @map("lifetime_withdrawn_lamports")
+  lifetimeWonLamports       BigInt  @default(0) @map("lifetime_won_lamports")
+
+  version                  Int      @default(0)
+
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("user_balances")
+}
+
+/// Append-only, immutable money ledger. Every balance mutation is one entry
+/// recording the signed deltas and the post-mutation snapshot. `idempotencyKey`
+/// makes each economic event apply exactly once even under retries.
+model LedgerEntry {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String          @map("user_id") @db.Uuid
+  type            LedgerEntryType
+  idempotencyKey  String          @unique @map("idempotency_key")
+
+  // signed deltas applied to the balance by this entry
+  deltaAvailable  BigInt          @map("delta_available")
+  deltaLocked     BigInt          @map("delta_locked")
+
+  // snapshot AFTER applying this entry (audit / reconciliation)
+  availableAfter  BigInt          @map("available_after")
+  lockedAfter     BigInt          @map("locked_after")
+
+  // optional references to the event that caused this movement
+  depositId       String?         @map("deposit_id") @db.Uuid
+  withdrawalId    String?         @map("withdrawal_id") @db.Uuid
+  duelId          String?         @map("duel_id") @db.Uuid
+  referralId      String?         @map("referral_id") @db.Uuid
+  tournamentId    String?         @map("tournament_id") @db.Uuid
+
+  memo            String?
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  deposit    Deposit?           @relation(fields: [depositId], references: [id], onDelete: SetNull)
+  withdrawal WithdrawalRequest? @relation(fields: [withdrawalId], references: [id], onDelete: SetNull)
+  duel       Duel?              @relation(fields: [duelId], references: [id], onDelete: SetNull)
+  tournament Tournament?        @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([duelId])
+  @@index([depositId])
+  @@index([withdrawalId])
+  @@index([tournamentId])
+  @@map("ledger_entries")
+}
+
+// ============================ CREDITS: DEPOSITS ==============================
+
+/// A confirmed inbound SOL transfer to the platform treasury, crediting the
+/// user's balance net of the deposit fee. `txSignature` is unique so a transfer
+/// can never be credited twice.
+model Deposit {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String        @map("user_id") @db.Uuid
+  status            DepositStatus @default(DETECTED)
+
+  fromWallet        String        @map("from_wallet")
+  toTreasuryWallet  String        @map("to_treasury_wallet")
+  txSignature       String        @unique @map("tx_signature")
+  slot              BigInt?
+  blockTime         DateTime?     @map("block_time") @db.Timestamptz(6)
+
+  // gross received on-chain, fee taken, net credited to the balance
+  grossLamports     BigInt        @map("gross_lamports")
+  feeLamports       BigInt        @map("fee_lamports")
+  creditedLamports  BigInt        @map("credited_lamports")
+  feeBps            Int           @map("fee_bps")
+
+  creditedAt        DateTime?     @map("credited_at") @db.Timestamptz(6)
+  error             String?
+
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user           User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  ledgerEntries  LedgerEntry[]
+  referral       Referral?     @relation("ReferralDeposit")
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("deposits")
+}
+
+// ============================ CREDITS: WITHDRAWALS ===========================
+
+/// A user request to move credits back to a Solana wallet. Funds are locked at
+/// request time. Auto-approved when the user has no active dispute; otherwise
+/// held PENDING_REVIEW for an admin. Only COMPLETED moves SOL out of treasury.
+model WithdrawalRequest {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  status             WithdrawalStatus @default(APPROVED)
+
+  amountLamports     BigInt           @map("amount_lamports")
+  destinationWallet  String           @map("destination_wallet")
+
+  // approval trail
+  autoApproved       Boolean          @default(false) @map("auto_approved")
+  heldReason         String?          @map("held_reason")     // why review was required
+  reviewedByAdminId  String?          @map("reviewed_by_admin_id") @db.Uuid
+  reviewNotes        String?          @map("review_notes")
+  reviewedAt         DateTime?        @map("reviewed_at") @db.Timestamptz(6)
+
+  // on-chain payout
+  txSignature        String?          @unique @map("tx_signature")
+  processedAt        DateTime?        @map("processed_at") @db.Timestamptz(6)
+  completedAt        DateTime?        @map("completed_at") @db.Timestamptz(6)
+  error              String?
+
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reviewedByAdmin User?         @relation("WithdrawalReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  ledgerEntries   LedgerEntry[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([reviewedByAdminId])
+  @@map("withdrawal_requests")
+}
+
+// ============================ CREDITS: REFERRALS =============================
+
+/// One referral edge with its reward. Created when a referred user makes their
+/// first qualifying deposit; the referrer earns a bps cut of that deposit.
+model Referral {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  referrerId      String               @map("referrer_id") @db.Uuid
+  refereeId       String               @unique @map("referee_id") @db.Uuid   // a user is referred once
+  triggerDepositId String?             @unique @map("trigger_deposit_id") @db.Uuid
+
+  status          ReferralRewardStatus @default(PENDING)
+  rewardBps       Int                  @map("reward_bps")
+  rewardLamports  BigInt               @default(0) @map("reward_lamports")
+  creditedAt      DateTime?            @map("credited_at") @db.Timestamptz(6)
+
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  referrer       User     @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Restrict)
+  referee        User     @relation("ReferralReferee", fields: [refereeId], references: [id], onDelete: Restrict)
+  triggerDeposit Deposit? @relation("ReferralDeposit", fields: [triggerDepositId], references: [id], onDelete: SetNull)
+
+  @@index([referrerId])
+  @@index([status])
+  @@map("referrals")
+}

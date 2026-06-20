@@ -1,0 +1,4 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  # Anchor program is a Rust/Cargo workspace, intentionally excluded from pnpm.

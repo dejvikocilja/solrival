@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Keep admin panel and internal APIs out of search indexes
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://solrival.com/sitemap.xml

@@ -1,0 +1,24 @@
+{
+  "name": "solrival",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=20.18 <21" },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @solrival/db generate",
+    "db:migrate": "pnpm --filter @solrival/db migrate:dev",
+    "db:deploy": "pnpm --filter @solrival/db migrate:deploy",
+    "anchor:build": "cd programs/solrival-escrow && anchor build",
+    "anchor:test": "cd programs/solrival-escrow && anchor test"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.6.0",
+    "prettier": "^3.3.0",
+    "@solrival/config": "workspace:*"
+  }
+}
