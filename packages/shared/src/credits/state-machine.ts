@@ -33,7 +33,7 @@ const TRANSITIONS: Record<WithdrawalStatus, readonly WithdrawalStatus[]> = {
   REJECTED: [],
 };
 
-export function canTransition(from: WithdrawalStatus, to: WithdrawalStatus): boolean {
+export function canTransitionWithdrawal(from: WithdrawalStatus, to: WithdrawalStatus): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
@@ -54,7 +54,7 @@ export class WithdrawalStateError extends Error {
 }
 
 export function assertWithdrawalTransition(from: WithdrawalStatus, to: WithdrawalStatus): void {
-  if (!canTransition(from, to)) throw new WithdrawalStateError(from, to);
+  if (!canTransitionWithdrawal(from, to)) throw new WithdrawalStateError(from, to);
 }
 
 /** Statuses whose funds are reverted to available when the request ends here. */
