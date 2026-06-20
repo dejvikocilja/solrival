@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
 import { prisma } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { handle, ok, fail } from "@/server/http/respond"
+import { refundCreditDuel } from "@/server/services/duel/credit-duel"
 import { z } from "zod"
 
 export const runtime = "nodejs"
@@ -81,8 +82,24 @@ export async function PATCH(
         return fail("INVALID_STATUS", "Duel is already refunded", 409)
       }
 
-      // H-011: Verify the on-chain escrow is closed before marking refunded in DB.
-      // If escrow is still active, lamports remain locked — block the DB update.
+      // H-011: On-chain (escrow) duels must be unwound on-chain first. While a
+      // PDA is still set we cannot safely mark the duel refunded here, because
+      // the lamports may remain locked on-chain. Block it and require the
+      // on-chain refund path so funds are never double-counted.
       if (duel.escrowPda) {
-        const { PublicKey } = await import("@solana/web3.js")
-        const { fetc
+        return fail(
+          "ON_CHAIN_REFUND_REQUIRED",
+          "This duel is escrowed on-chain; unwind it via the on-chain tooling before changing its status.",
+          409,
+        )
+      }
+
+      // Credit duels: atomically return both players' locked stakes to available
+      // and mark the duel REFUNDED (idempotent).
+      const refunded = await refundCreditDuel(id)
+      return ok({ data: serializeDuel(refunded as unknown as Record<string, unknown>) })
+    }
+
+    return fail("INVALID_ACTION", "Unknown action", 400)
+  })
+}

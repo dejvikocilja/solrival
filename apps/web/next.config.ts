@@ -28,7 +28,6 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@solrival/shared", "@solrival/sdk", "@solrival/db"],
-  experimental: { typedRoutes: true },
 
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Duel } from '@/types/duel'
 import { useDuel } from '@/hooks/useDuel'
 
-function useFocusTrap(ref: React.RefObject<HTMLElement>, active: boolean) {
+function useFocusTrap(ref: React.RefObject<HTMLElement | null>, active: boolean) {
   useEffect(() => {
     if (!active || !ref.current) return
     const el = ref.current

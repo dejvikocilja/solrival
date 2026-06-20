@@ -182,6 +182,7 @@ export function useNotifications(playerTag: string | null): {
   markRead: (id: string) => void
   dismiss: (id: string) => void
   toasts: Notification[]
+  cappedAt50: boolean
 } {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [toastIds, setToastIds] = useState<string[]>([])
