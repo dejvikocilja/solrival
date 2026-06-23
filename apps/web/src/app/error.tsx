@@ -22,23 +22,23 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
   }, [error])
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-8 text-center">
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 p-8 text-center">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Something went wrong</h1>
-        <p className="text-sm text-muted-foreground max-w-md">
-          An unexpected error occurred. If this keeps happening, please contact
-          support.
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-fg">
+          Something went wrong
+        </h1>
+        <p className="mx-auto max-w-md text-sm text-muted">
+          An unexpected error interrupted this page. Try again — if it keeps happening, the issue is
+          on our side.
         </p>
         {error.digest && (
-          <p className="text-xs text-muted-foreground font-mono">
-            Error ID: {error.digest}
-          </p>
+          <p className="font-mono text-xs text-faint">Error ID: {error.digest}</p>
         )}
       </div>
 
       <button
         onClick={reset}
-        className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+        className="inline-flex h-10 items-center gap-2 rounded-md bg-rival px-4 text-sm font-medium text-rival-fg transition-all hover:brightness-110 focus-visible:focus-ring active:scale-[0.98]"
       >
         Try again
       </button>

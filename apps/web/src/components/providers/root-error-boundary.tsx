@@ -29,18 +29,18 @@ export class RootErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-background p-8">
+        <div className="flex min-h-screen items-center justify-center bg-bg p-8">
           <div className="max-w-md space-y-4 text-center">
-            <h1 className="text-xl font-semibold text-foreground">
+            <h1 className="font-display text-xl font-semibold text-fg">
               Something went wrong
             </h1>
-            <p className="text-sm text-muted-foreground">
-              An unexpected error occurred. If this keeps happening, please
-              contact support.
+            <p className="text-sm text-muted">
+              An unexpected error interrupted the app. Reload to get back to your duels — if it keeps
+              happening, the issue is on our side.
             </p>
             <button
               onClick={() => this.setState({ hasError: false, error: null })}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-rival px-4 text-sm font-medium text-rival-fg transition-all hover:brightness-110 focus-visible:focus-ring active:scale-[0.98]"
             >
               Try again
             </button>
