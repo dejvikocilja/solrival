@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ChevronDown, Copy, LogOut, Wallet as WalletIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BalancePill } from "@/components/credits/balance-pill";
+import { NotificationsMenu } from "@/components/notifications/notifications-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
@@ -109,6 +110,7 @@ function AccountMenu({
 
   return (
     <div className="flex items-center gap-1.5">
+      <NotificationsMenu />
       <BalancePill className="hidden sm:inline-flex" />
       <div ref={ref} className="relative">
         <button

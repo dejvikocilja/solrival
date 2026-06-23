@@ -202,8 +202,9 @@ export function useNotifications(playerTag: string | null): {
 
   // Cleanup timers on unmount
   useEffect(() => {
+    const timers = dismissTimers.current
     return () => {
-      for (const timer of dismissTimers.current.values()) {
+      for (const timer of timers.values()) {
         clearTimeout(timer)
       }
     }

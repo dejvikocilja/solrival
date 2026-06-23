@@ -18,15 +18,10 @@ export class ApiError extends Error {
 
 type ApiErrorBody = { error?: { code?: string; message?: string; details?: unknown } };
 
-export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
+async function request<T>(url: string, init: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    res = await fetch(url, { credentials: "same-origin", ...init });
   } catch {
     throw new ApiError("NETWORK_ERROR", "Network error — check your connection and try again.", 0);
   }
@@ -43,4 +38,16 @@ export async function apiPost<T>(url: string, body?: unknown): Promise<T> {
     );
   }
   return data as T;
+}
+
+export function apiGet<T>(url: string): Promise<T> {
+  return request<T>(url, { method: "GET" });
+}
+
+export function apiPost<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 }

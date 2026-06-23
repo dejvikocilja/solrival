@@ -77,7 +77,7 @@ export function DuelCard({ duel }: { duel: MarketplaceDuel }) {
 
         {/* CTA */}
         <Link
-          href={`/duels/${duel.shortCode}`}
+          href={`/duels/${duel.id}`}
           className={cn(buttonVariants({ variant: "primary", size: "md" }), "mt-4 w-full")}
         >
           Accept challenge
