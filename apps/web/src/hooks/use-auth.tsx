@@ -1,12 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useQueryClient } from "@tanstack/react-query";
 import bs58 from "bs58";
 import type { NonceResponse, SessionUser, VerifyResponse } from "@solrival/shared";
 import { resolveProvider } from "@/lib/solana/wallet-provider";
 
-type Status = "loading" | "authenticated" | "unauthenticated" | "signing";
+export type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signing";
+
+export interface AuthContextValue {
+  user: SessionUser | null;
+  status: AuthStatus;
+  error: string | null;
+  connected: boolean;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+}
 
 async function postJson<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -22,12 +39,14 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
 
 /**
  * Drives the Sign-In With Solana flow against the wallet selected via the
- * wallet-adapter modal. Call `signIn()` after a wallet is connected.
+ * wallet-adapter modal. The state is shared app-wide through {@link AuthProvider}
+ * so the header, forms, and pages all observe the same session at once.
  */
-export function useAuth() {
+function useAuthState(): AuthContextValue {
   const { publicKey, wallet, signMessage, connected, disconnect } = useWallet();
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [status, setStatus] = useState<Status>("loading");
+  const [status, setStatus] = useState<AuthStatus>("loading");
   const [error, setError] = useState<string | null>(null);
 
   // hydrate current session on mount
@@ -82,18 +101,37 @@ export function useAuth() {
 
       setUser(authedUser);
       setStatus("authenticated");
+      // The balance / activity become readable the moment we're authed.
+      void queryClient.invalidateQueries({ queryKey: ["credits"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign-in failed");
       setStatus("unauthenticated");
     }
-  }, [publicKey, signMessage, wallet]);
+  }, [publicKey, signMessage, wallet, queryClient]);
 
   const signOut = useCallback(async () => {
     await postJson("/api/auth/logout").catch(() => {});
     await disconnect().catch(() => {});
     setUser(null);
     setStatus("unauthenticated");
-  }, [disconnect]);
+    setError(null);
+    // Drop any credit-scoped data so a different player can't see it.
+    queryClient.removeQueries({ queryKey: ["credits"] });
+  }, [disconnect, queryClient]);
 
   return { user, status, error, connected, signIn, signOut };
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const value = useAuthState();
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/** Reads the shared auth session. Must be used inside {@link AuthProvider}. */
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  return ctx;
 }
