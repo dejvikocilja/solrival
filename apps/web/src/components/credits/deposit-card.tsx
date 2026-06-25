@@ -7,7 +7,7 @@ import { ArrowDownToLine } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, NumberInput, FieldError } from "@/components/ui/field";
-import { DEPOSIT_FEE_BPS, useDeposit } from "@/hooks/useCredits";
+import { DEPOSIT_FEE_BPS, DepositCancelledError, useDeposit } from "@/hooks/useCredits";
 import { ApiError } from "@/lib/api/client";
 import { solToLamports, lamportsToSol, bpsToPercent } from "@/lib/utils";
 
@@ -31,7 +31,13 @@ export function DepositCard() {
       toast.success(`Deposited — ◎${lamportsToSol(res.deposit.creditedLamports)} added to your balance`);
       setAmount("");
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Deposit failed");
+      if (e instanceof DepositCancelledError) {
+        toast("Deposit cancelled"); // neutral, not an error
+        return;
+      }
+      const message =
+        e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Deposit failed";
+      toast.error(message);
     }
   };
 

@@ -51,6 +51,23 @@ export type WithdrawalView = {
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET ?? "";
 export const DEPOSIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "200");
+// Upper bound for a single-transfer fee (5000 lamports/signature) + headroom.
+const FEE_BUFFER_LAMPORTS = 10_000n;
+
+/** Thrown when the user dismisses the wallet popup — a cancel, not a real error. */
+export class DepositCancelledError extends Error {
+  constructor() {
+    super("Deposit cancelled");
+    this.name = "DepositCancelledError";
+  }
+}
+
+/** Phantom reports a dismissed popup as code 4001 / "User rejected the request". */
+function isUserRejection(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message.toLowerCase() : "";
+  const code = (e as { code?: number } | null)?.code;
+  return code === 4001 || msg.includes("user rejected") || msg.includes("rejected the request");
+}
 
 const balanceKey = ["credits", "balance"] as const;
 const withdrawalsKey = ["credits", "withdrawals"] as const;
@@ -93,18 +110,46 @@ export function useDeposit() {
       if (!publicKey) throw new Error("Connect your wallet first");
       if (!TREASURY) throw new Error("Treasury wallet is not configured");
 
-      const tx = new Transaction().add(
+      // Pre-flight on the app's cluster: gives a clear message instead of an
+      // opaque wallet rejection if the wallet is on the wrong network or low.
+      const balance = BigInt(await connection.getBalance(publicKey));
+      if (balance < lamports + FEE_BUFFER_LAMPORTS) {
+        throw new Error(
+          "Insufficient SOL on the connected network. Make sure your wallet is on the same " +
+            "network as the app (Devnet for testing) and funded enough to cover the deposit plus fees.",
+        );
+      }
+
+      const { blockhash, lastValidBlockHeight } =
+        await connection.getLatestBlockhash("finalized");
+      const tx = new Transaction({ feePayer: publicKey, blockhash, lastValidBlockHeight }).add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(TREASURY),
           lamports,
         }),
       );
-      const signature = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(signature, "confirmed");
 
-      // Server re-verifies against the chain at finalized commitment before crediting.
-      return apiPost<{ deposit: { id: string; creditedLamports: string } }>("/api/deposits", { signature });
+      let signature: string;
+      try {
+        signature = await sendTransaction(tx, connection);
+      } catch (e) {
+        if (isUserRejection(e)) throw new DepositCancelledError();
+        throw e;
+      }
+
+      // Wait for FINALIZED before telling the server: the deposit verifier reads
+      // the chain at `finalized`, so confirming only at `confirmed` would fail
+      // server-side while the SOL has already left the wallet.
+      await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "finalized",
+      );
+
+      return apiPost<{ deposit: { id: string; creditedLamports: string } }>(
+        "/api/deposits",
+        { signature },
+      );
     },
     [connection, publicKey, sendTransaction],
   );
