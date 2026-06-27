@@ -16,9 +16,12 @@ import { clusterApiUrl } from "@solana/web3.js";
  */
 export function SolanaWalletProvider({ children }: { children: ReactNode }) {
   const endpoint = useMemo(() => {
-    const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC_URL;
+    const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC_URL?.trim();
     const cluster = (process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet") as "devnet" | "mainnet-beta";
-    return rpc ?? clusterApiUrl(cluster);
+    // Use a truthiness check, not `??`: an empty-string env var is not
+    // null/undefined, so `??` would pass "" through as the endpoint and
+    // silently break the connection.
+    return rpc ? rpc : clusterApiUrl(cluster);
   }, []);
 
   const wallets = useMemo(

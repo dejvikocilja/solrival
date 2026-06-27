@@ -4,6 +4,7 @@ import { prisma, type Duel, type User } from "@solrival/db";
 import { isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/shared";
 import { applyEntry, lockBalances, CreditError } from "../credits/balance";
 import { toDuelSummary, DuelError } from "./service";
+import { DuelConflictError } from "./repo";
 
 /**
  * Credit-based duel flow (custodial GGDUEL balance).
@@ -186,6 +187,38 @@ export async function cancelCreditDuel(user: User, duel: Duel) {
   });
 
   return toDuelSummary(await prisma.duel.findUniqueOrThrow({ where: { id: duel.id } }));
+}
+
+
+// ─── Expire (unaccepted duel past its window) ────────────────────────────────
+
+/**
+ * Expires an unaccepted credit duel: transitions to EXPIRED and returns the
+ * creator's locked stake to available — atomically and idempotently. Mirrors
+ * cancel, but triggered by the expiry sweep instead of the creator. Shares the
+ * cancel refund key, so it can never double-refund a duel that was also
+ * cancelled, and is safe to re-run.
+ */
+export async function expireCreditDuel(duel: Duel): Promise<void> {
+  if (duel.fundingMode !== "CREDITS") throw new DuelError("WRONG_MODE", "Not a credit duel", 400);
+
+  await prisma.$transaction(async (tx) => {
+    const moved = await tx.duel.updateMany({
+      where: { id: duel.id, status: { in: ["WAITING_FOR_OPPONENT", "CREATED"] }, opponentId: null },
+      data: { status: "EXPIRED" },
+    });
+    if (moved.count !== 1) throw new DuelConflictError(); // already transitioned / raced
+
+    await applyEntry(tx, {
+      userId: duel.creatorId,
+      type: "STAKE_REFUND",
+      idempotencyKey: `duel-refund:${duel.id}:${duel.creatorId}`,
+      deltaLocked: -duel.stakeLamports,
+      deltaAvailable: duel.stakeLamports,
+      duelId: duel.id,
+      memo: "Stake returned (duel expired)",
+    });
+  });
 }
 
 // ─── Settle (winner takes the whole pot) ─────────────────────────────────────

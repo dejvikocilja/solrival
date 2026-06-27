@@ -19,6 +19,8 @@ import {
 } from "./repo";
 import { buildUnsignedTx, confirmTxSucceeded, escrowIsClosed, fetchEscrow } from "./onchain";
 import { escrowClient, platformFeeBps } from "../../solana/config";
+import { expireCreditDuel } from "./credit-duel";
+
 
 const DUEL_WINDOW_MS = 30 * 60 * 1000;
 
@@ -265,16 +267,25 @@ export async function startMatch(duelId: string) {
  * keeper refunds it). Per-row errors are swallowed so one conflict can't stall
  * the sweep.
  */
-export async function expireDuels(): Promise<{ expired: number }> {
+export async function expireDuels(): Promise<{ expired: number; refunded: number }> {
   const rows = await findExpiredDuels();
   let expired = 0;
+  let refunded = 0;
   for (const d of rows) {
     try {
-      await transitionStatus(d.id, d.status, "EXPIRED");
+      if (d.fundingMode === "CREDITS") {
+        // Credit duels hold the stake only in the ledger — release it here.
+        await expireCreditDuel(d);
+        refunded += 1;
+      } else {
+        // On-chain duels: flip status; the locked SOL is reclaimed on-chain
+        // by the permissionless reclaim_expired keeper.
+        await transitionStatus(d.id, d.status, "EXPIRED");
+      }
       expired += 1;
     } catch (e) {
       if (!(e instanceof DuelConflictError)) throw e; // ignore lost races
     }
   }
-  return { expired };
+  return { expired, refunded };
 }

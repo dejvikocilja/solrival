@@ -1,0 +1,14 @@
+{
+  "name": "solrival",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "web", "visibility": "public", "onAutoForward": "notify" }
+  },
+  "onCreateCommand": "corepack enable && corepack prepare pnpm@9.12.0 --activate",
+  "postCreateCommand": "pnpm install && pnpm db:generate",
+  "postAttachCommand": "nohup pnpm dev > /tmp/dev.log 2>&1 &"
+}
