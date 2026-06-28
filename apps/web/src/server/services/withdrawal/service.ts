@@ -10,6 +10,10 @@ import { PublicKey } from "@solana/web3.js";
 import { applyEntry, CreditError } from "../credits/balance";
 import { sendFromTreasury } from "../../solana/treasury";
 
+/** Platform fee on withdrawals, in basis points (NEXT_PUBLIC_WITHDRAWAL_FEE_BPS).
+ *  The user receives the amount minus this fee; the fee stays in the treasury. */
+const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "200"); // 2%
+
 /**
  * Withdrawal lifecycle + fraud control.
  *
@@ -157,18 +161,23 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
   const claimed = await transition(withdrawalId, "APPROVED", "PROCESSING", { processedAt: new Date() });
   if (!claimed) throw new WithdrawalError("RACE", "Withdrawal already being processed", 409);
 
+  // Withdrawal fee: user receives the requested amount minus the fee. The full
+  // requested amount leaves their locked balance; the fee stays in the treasury.
+  const feeLamports = (w.amountLamports * BigInt(WITHDRAWAL_FEE_BPS)) / 10_000n;
+  const netLamports = w.amountLamports - feeLamports;
+
   try {
-    const { signature } = await sendFromTreasury(new PublicKey(w.destinationWallet), w.amountLamports);
+    const { signature } = await sendFromTreasury(new PublicKey(w.destinationWallet), netLamports);
 
     await prisma.$transaction(async (tx) => {
       await applyEntry(tx, {
         userId: w.userId,
         type: "WITHDRAWAL_SETTLE",
         idempotencyKey: `wd-settle:${w.id}`,
-        deltaLocked: -w.amountLamports, // funds have left the platform
-        lifetimeWithdrawn: w.amountLamports,
+        deltaLocked: -w.amountLamports, // full requested amount leaves the platform
+        lifetimeWithdrawn: netLamports, // what the user actually received on-chain
         withdrawalId: w.id,
-        memo: `Withdrawal paid: ${signature}`,
+        memo: `Withdrawal paid: ${signature} (fee ${WITHDRAWAL_FEE_BPS}bps)`,
       });
       await tx.withdrawalRequest.update({
         where: { id: w.id },

@@ -9,6 +9,8 @@ import { Field, NumberInput, TextInput, FieldError } from "@/components/ui/field
 import { useWithdraw, type BalanceView } from "@/hooks/useCredits";
 import { ApiError } from "@/lib/api/client";
 import { solToLamports, lamportsToSol } from "@/lib/utils";
+const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "200");
+
 
 /**
  * Withdraw credits back to a Solana wallet. Funds lock immediately; the request
@@ -23,6 +25,9 @@ export function WithdrawCard({ balance }: { balance: BalanceView | undefined }) 
   const lamports = solToLamports(amount);
   const available = balance ? BigInt(balance.availableLamports) : 0n;
   const overBalance = lamports != null && lamports > available;
+  const feePct = (WITHDRAWAL_FEE_BPS / 100).toString();
+  const feeLamports = lamports != null ? (lamports * BigInt(WITHDRAWAL_FEE_BPS)) / 10_000n : null;
+  const netLamports = lamports != null && feeLamports != null ? lamports - feeLamports : null;
 
   const submit = async () => {
     if (!lamports || overBalance) return;
@@ -47,7 +52,7 @@ export function WithdrawCard({ balance }: { balance: BalanceView | undefined }) 
         </span>
         <div>
           <h2 className="text-sm font-semibold text-fg">Withdraw</h2>
-          <p className="text-xs text-faint">Send your balance to a Solana wallet — no fee</p>
+          <p className="text-xs text-faint">Send your balance to a Solana wallet</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -70,6 +75,19 @@ export function WithdrawCard({ balance }: { balance: BalanceView | undefined }) 
             disabled={withdraw.isPending}
           />
         </Field>
+
+        {lamports && !overBalance ? (
+          <div className="rounded-md border border-border bg-surface-2/60 p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-muted">Fee ({feePct}%)</span>
+              <span className="font-mono text-fg">◎{lamportsToSol(feeLamports!)}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-muted">You&rsquo;ll receive</span>
+              <span className="font-mono font-semibold text-fg">◎{lamportsToSol(netLamports!)}</span>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex items-start gap-2 rounded-md border border-border bg-surface-2 p-3 text-xs text-faint">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-victory" aria-hidden />

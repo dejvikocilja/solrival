@@ -69,7 +69,7 @@ export default function AdminDuelsPage() {
   const [filters,     setFilters]     = useState<Filters>({ status: "all", game: "all" })
   const [page,        setPage]        = useState(1)
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
-  const [confirmDuel, setConfirmDuel] = useState<{ id: string; action: "cancel" | "force-refund" } | null>(null)
+  const [confirmDuel, setConfirmDuel] = useState<{ id: string; action: "force-refund" } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
   const fetchDuels = useCallback(async (f: Filters, p: number) => {
@@ -179,33 +179,20 @@ export default function AdminDuelsPage() {
       render: (d) => (
         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
           <ActionButton
-            label="Cancel"
-            danger
-            onClick={() => setConfirmDuel({ id: d.id, action: "cancel" })}
-            disabled={["COMPLETED", "CANCELLED", "REFUNDED", "EXPIRED"].includes(d.status)}
-          />
-          <ActionButton
             label="Refund"
             onClick={() => setConfirmDuel({ id: d.id, action: "force-refund" })}
-            disabled={d.status === "REFUNDED"}
+            disabled={["COMPLETED", "CANCELLED", "REFUNDED"].includes(d.status)}
           />
         </div>
       ),
     },
   ]
 
-  const confirmMeta =
-    confirmDuel?.action === "cancel"
-      ? {
-          title:       "Cancel duel",
-          description: "This will immediately cancel the duel and prevent any further actions. The on-chain escrow may still hold funds — a separate refund step may be needed.",
-          label:       "Cancel duel",
-        }
-      : {
-          title:       "Force refund",
-          description: "This marks the duel as refunded. Ensure the on-chain escrow has been closed and funds returned to both players before confirming.",
-          label:       "Force refund",
-        }
+  const confirmMeta = {
+    title:       "Refund duel",
+    description: "Returns every locked stake to the players' available balances and closes the duel as refunded. Idempotent and safe to retry.",
+    label:       "Refund duel",
+  }
 
   return (
     <div className="space-y-6">
@@ -269,7 +256,6 @@ export default function AdminDuelsPage() {
           title={confirmMeta.title}
           description={confirmMeta.description}
           confirmLabel={confirmMeta.label}
-          danger={confirmDuel.action === "cancel"}
           loading={actionLoading}
           onConfirm={handleAction}
           onClose={() => setConfirmDuel(null)}

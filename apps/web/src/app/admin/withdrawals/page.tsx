@@ -40,6 +40,8 @@ export default function AdminWithdrawalsPage() {
   // Review modal state
   const [review, setReview] = useState<{ row: AdminWithdrawal; decision: "APPROVE" | "REJECT" } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [payout, setPayout] = useState<AdminWithdrawal | null>(null);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,6 +76,28 @@ export default function AdminWithdrawalsPage() {
       await load();
     } finally {
       setSubmitting(false);
+    }
+  };
+
+const submitPayout = async () => {
+    if (!payout) return;
+    setPaying(true);
+    try {
+      const res = await fetch(`/api/admin/withdrawals/${payout.id}/payout`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        throw new Error(j?.error?.message ?? "Payout failed");
+      }
+      setPayout(null);
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Payout failed");
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -116,25 +140,42 @@ export default function AdminWithdrawalsPage() {
     {
       key: "actions",
       header: "",
-      render: (r) =>
-        r.status === "PENDING_REVIEW" ? (
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setReview({ row: r, decision: "APPROVE" })}
-              className="rounded-lg bg-emerald-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
-            >
-              Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => setReview({ row: r, decision: "REJECT" })}
-              className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-900/40"
-            >
-              Reject
-            </button>
-          </div>
-        ) : null,
+      render: (r) => {
+        if (r.status === "PENDING_REVIEW") {
+          return (
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReview({ row: r, decision: "APPROVE" })}
+                className="rounded-lg bg-emerald-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                onClick={() => setReview({ row: r, decision: "REJECT" })}
+                className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-900/40"
+              >
+                Reject
+              </button>
+            </div>
+          );
+        }
+        if (r.status === "APPROVED") {
+          return (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setPayout(r)}
+                className="rounded-lg bg-violet-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500"
+              >
+                Pay out
+              </button>
+            </div>
+          );
+        }
+        return null;
+      },
     },
   ];
 
@@ -201,6 +242,17 @@ export default function AdminWithdrawalsPage() {
           loading={submitting}
           onConfirm={submitReview}
           onClose={() => setReview(null)}
+        />
+      ) : null}
+
+      {payout ? (
+        <ConfirmModal
+          title="Pay out withdrawal"
+          description={`Send ◎${sol(payout.amountLamports)} from the treasury to ${shortWallet(payout.destinationWallet)}? This moves funds on-chain and can't be undone.`}
+          confirmLabel="Pay out"
+          loading={paying}
+          onConfirm={submitPayout}
+          onClose={() => setPayout(null)}
         />
       ) : null}
     </div>

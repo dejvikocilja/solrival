@@ -76,7 +76,7 @@ export async function lockBalances(tx: Tx, userIds: string[]): Promise<void> {
   for (const id of unique) await getOrCreateBalance(id, tx);
   await tx.$queryRaw`
     SELECT 1 FROM user_balances
-    WHERE user_id IN (${Prisma.join(unique.map((id) => Prisma.sql`${id}::uuid`))})
+    WHERE user_id = ANY(${unique}::uuid[])
     ORDER BY user_id
     FOR UPDATE`;
 }

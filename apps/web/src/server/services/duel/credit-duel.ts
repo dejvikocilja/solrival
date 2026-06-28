@@ -20,19 +20,22 @@ import { DuelConflictError } from "./repo";
  */
 
 const DUEL_WINDOW_MS = 30 * 60 * 1000;
-const CREDIT_FEE_BPS = 0; // winner takes the entire pot
+// Platform rake on each duel pot, in basis points. Configurable via env
+// (NEXT_PUBLIC_DUEL_RAKE_BPS); snapshotted onto each duel at creation.
+const CREDIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "1000"); // 10%
 
 const shortCode = () => randomBytes(5).toString("hex");
 const inviteToken = () => randomBytes(24).toString("base64url");
 
 function creditEconomics(stakeLamports: bigint) {
   const pot = stakeLamports * 2n;
+  const fee = (pot * BigInt(CREDIT_FEE_BPS)) / 10_000n;
   return {
     stakeLamports: stakeLamports.toString(),
     platformFeeBps: CREDIT_FEE_BPS,
     potLamports: pot.toString(),
-    feeLamports: "0",
-    rewardLamports: pot.toString(), // winner receives the full pot
+    feeLamports: fee.toString(),
+    rewardLamports: (pot - fee).toString(), // winner receives the pot minus rake
   };
 }
 
@@ -239,6 +242,10 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
   const loserId = winnerId === duel.creatorId ? duel.opponentId : duel.creatorId;
   const stake = duel.stakeLamports;
   const pot = stake * 2n;
+  // Use the fee snapshotted at creation so the payout always matches the terms
+  // shown when the duel was made, even if the rake config changed since.
+  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
+  const reward = pot - rake; // what the winner actually receives
 
   await prisma.$transaction(async (tx) => {
     // Move the duel to COMPLETED first (guards against double-settlement).
@@ -247,8 +254,8 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
       data: {
         status: "COMPLETED",
         winnerId,
-        winnerPayoutLamports: pot,
-        feeCollectedLamports: 0n,
+        winnerPayoutLamports: reward,
+        feeCollectedLamports: rake,
         settledAt: new Date(),
       },
     });
@@ -256,7 +263,7 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
 
     await lockBalances(tx, [winnerId, loserId]);
 
-    // Loser forfeits their locked stake (it flows to the winner via the pot).
+    // Loser forfeits their locked stake (it funds the winner's pot + platform rake).
     await applyEntry(tx, {
       userId: loserId,
       type: "STAKE_FORFEIT",
@@ -265,16 +272,16 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
       duelId,
       memo: "Stake forfeited (duel lost)",
     });
-    // Winner: release own lock and receive the whole pot.
+    // Winner: release own lock and receive the pot minus the platform rake.
     await applyEntry(tx, {
       userId: winnerId,
       type: "DUEL_PAYOUT",
       idempotencyKey: `duel-payout:${duelId}:${winnerId}`,
       deltaLocked: -stake,
-      deltaAvailable: pot,
-      lifetimeWon: stake, // net winnings = opponent's stake
+      deltaAvailable: reward,
+      lifetimeWon: reward - stake, // net winnings = opponent's stake minus rake
       duelId,
-      memo: "Won duel — full pot credited",
+      memo: "Won duel — pot credited (net of platform rake)",
     });
 
     await tx.user.update({ where: { id: winnerId }, data: { wins: { increment: 1 } } });
@@ -300,7 +307,13 @@ export async function refundCreditDuel(duelId: string): Promise<Duel> {
 
   await prisma.$transaction(async (tx) => {
     const moved = await tx.duel.updateMany({
-      where: { id: duelId, status: { in: ["ACCEPTED", "ACTIVE", "VERIFYING", "DISPUTED"] } },
+      where: {
+        id: duelId,
+        // Include pre-acceptance states so an admin can refund an open/expired
+        // duel only the creator funded — `participants` below already resolves
+        // to just the creator when there's no opponent.
+        status: { in: ["WAITING_FOR_OPPONENT", "CREATED", "ACCEPTED", "ACTIVE", "VERIFYING", "DISPUTED"] },
+      },
       data: { status: "REFUNDED", settledAt: new Date() },
     });
     if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel not in a refundable state", 409);

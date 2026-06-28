@@ -208,6 +208,20 @@ export function listJoinableDuels(filter: {
   });
 }
 
+/** All duels a user participates in (creator or opponent), newest first. */
+export function listUserDuels(userId: string, limit = 100) {
+  return prisma.duel.findMany({
+    where: { OR: [{ creatorId: userId }, { opponentId: userId }] },
+    orderBy: [{ createdAt: "desc" }],
+    take: limit,
+    include: {
+      creator: { select: { username: true, walletAddress: true } },
+      opponent: { select: { username: true, walletAddress: true } },
+      rule: { select: { template: true, displayName: true } },
+    },
+  });
+}
+
 /** Pre-acceptance duels past their expiry, for the sweep job. */
 export function findExpiredDuels(limit = 200) {
   return prisma.duel.findMany({

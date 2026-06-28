@@ -32,6 +32,8 @@ const GAME_OPTIONS = [
 ];
 const STAKE_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
 const LAMPORTS_PER_SOL = 1_000_000_000;
+const DUEL_RAKE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "1000");
+
 
 type Errors = Partial<Record<"stake" | "friendLink", string>>;
 
@@ -140,7 +142,10 @@ export function CreateDuelForm() {
   }
 
   const lamports = stakeToLamports(stake);
-  const potLamports = lamports ? (lamports * 2n).toString() : null;
+  const potLamports = lamports ? lamports * 2n : null;
+  const rakePct = (DUEL_RAKE_BPS / 100).toString();
+  const rewardLamports =
+    potLamports !== null ? potLamports - (potLamports * BigInt(DUEL_RAKE_BPS)) / 10_000n : null;
   const rules = RULES_BY_GAME[game];
 
   const submitLabel = !connected
@@ -290,13 +295,21 @@ export function CreateDuelForm() {
             <div className="mt-2 flex items-center justify-between text-sm">
               <span className="text-muted">Prize pool</span>
               <span className="font-mono text-fg">
-                {potLamports ? <SolAmount lamports={potLamports} /> : <span className="text-faint">—</span>}
+                {potLamports !== null ? <SolAmount lamports={potLamports.toString()} /> : <span className="text-faint">—</span>}
+              </span>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-sm">
+              <span className="text-muted">
+                Winner takes <span className="text-faint">(after {rakePct}% rake)</span>
+              </span>
+              <span className="font-mono font-semibold text-victory">
+                {rewardLamports !== null ? <SolAmount lamports={rewardLamports.toString()} /> : <span className="text-faint">—</span>}
               </span>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-faint">
-              Both players stake the same amount. The winner takes the entire pool, credited
-              automatically to their balance. Open for 30 minutes — if no one accepts, your stake is
-              refunded.
+              Both players stake the same amount. The winner takes the pool minus a {rakePct}% platform
+              rake, credited automatically. Open for 30 minutes — if no one accepts, your stake is
+              refunded in full.
             </p>
           </div>
 

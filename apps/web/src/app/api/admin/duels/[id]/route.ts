@@ -3,13 +3,15 @@ import { prisma } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { handle, ok, fail } from "@/server/http/respond"
 import { refundCreditDuel } from "@/server/services/duel/credit-duel"
+import { applyVerifiedWinner } from "@/server/services/duel/settlement"
 import { z } from "zod"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const patchSchema = z.object({
-  action: z.enum(["cancel", "force-refund"]),
+  action: z.enum(["force-refund", "force-settle"]),
+  winner: z.enum(["creator", "opponent"]).optional(),
 })
 
 function serializeDuel(d: Record<string, unknown>) {
@@ -66,16 +68,6 @@ export async function PATCH(
     const duel = await prisma.duel.findUnique({ where: { id } })
     if (!duel) return fail("NOT_FOUND", "Duel not found", 404)
 
-    if (body.action === "cancel") {
-      if (duel.status === "COMPLETED" || duel.status === "CANCELLED") {
-        return fail("INVALID_STATUS", "Duel cannot be cancelled in its current state", 409)
-      }
-      const updated = await prisma.duel.update({
-        where: { id },
-        data:  { status: "CANCELLED" },
-      })
-      return ok({ data: serializeDuel(updated as unknown as Record<string, unknown>) })
-    }
 
     if (body.action === "force-refund") {
       if (duel.status === "REFUNDED") {
@@ -99,7 +91,20 @@ export async function PATCH(
       const refunded = await refundCreditDuel(id)
       return ok({ data: serializeDuel(refunded as unknown as Record<string, unknown>) })
     }
-
+    if (body.action === "force-settle") {
+      // Manual settlement override standing in for the IP-locked verifier
+      // (Phase 6). Pays the chosen winner the full pot via the exact path the
+      // verifier uses (applyVerifiedWinner -> settleCreditDuel). Idempotent.
+      if (duel.escrowPda) {
+        return fail("ON_CHAIN_REFUND_REQUIRED", "This duel is escrowed on-chain; settle it via on-chain tooling.", 409)
+      }
+      if (!duel.opponentId) return fail("NO_OPPONENT", "Duel has no opponent to settle", 409)
+      if (!body.winner) return fail("BAD_WINNER", "Specify the winner (creator or opponent)", 400)
+      const winnerId = body.winner === "creator" ? duel.creatorId : duel.opponentId
+      const settled = await applyVerifiedWinner(id, winnerId)
+      return ok({ data: serializeDuel(settled as unknown as Record<string, unknown>) })
+    }
+    
     return fail("INVALID_ACTION", "Unknown action", 400)
   })
 }
