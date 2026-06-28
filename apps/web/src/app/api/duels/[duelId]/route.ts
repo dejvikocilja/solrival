@@ -37,6 +37,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
         expiresAt: duel.expiresAt.toISOString(),
         acceptedAt: duel.acceptedAt?.toISOString() ?? null,
         createdAt: duel.createdAt.toISOString(),
+        winnerId: duel.winnerId,
+        winnerPayoutLamports: duel.winnerPayoutLamports?.toString() ?? null,
         creator: duel.creator,
         opponent: duel.opponent,
         rule: duel.rule,

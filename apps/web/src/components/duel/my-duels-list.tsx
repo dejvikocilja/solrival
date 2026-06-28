@@ -155,10 +155,17 @@ function Outcome({ duel }: { duel: MyDuel }) {
   if (duel.status === "COMPLETED") {
     return (
       <div className="text-right">
-        <div className="text-[11px] uppercase tracking-wide text-faint">{duel.youWon ? "You won" : "You lost"}</div>
+        <div
+          className={cn(
+            "text-[11px] font-medium uppercase tracking-wide",
+            duel.youWon ? "text-victory" : "text-danger",
+          )}
+        >
+          {duel.youWon ? "Win" : "Loss"}
+        </div>
         <SolAmount
           lamports={duel.youWon ? duel.rewardLamports : duel.stakeLamports}
-          className={cn("text-sm font-semibold", duel.youWon ? "text-victory" : "text-muted")}
+          className={cn("text-sm font-semibold", duel.youWon ? "text-victory" : "text-danger")}
         />
       </div>
     );

@@ -1,14 +1,16 @@
-import type { DuelVisibility, Game, RuleTemplate } from "@solrival/shared";
+import type { DuelVisibility, Game, RuleTemplate, DuelStatus } from "@solrival/shared";
 import { apiGet, apiPost } from "./client";
 
-export type DuelStatus =
-  | "CREATED"
-  | "WAITING_FOR_OPPONENT"
-  | "ACCEPTED"
-  | "ACTIVE"
-  | "SETTLED"
-  | "CANCELLED"
-  | "EXPIRED";
+/**
+ * The duel status union is the SINGLE canonical one from @solrival/shared, which
+ * mirrors the Prisma `DuelStatus` enum. It is re-exported here so existing UI
+ * imports (`import { type DuelStatus } from "@/lib/api/duels"`) resolve to it.
+ *
+ * Do NOT redeclare the values locally — a stale copy here (missing COMPLETED /
+ * VERIFYING / DISPUTED / REFUNDED, with a bogus "SETTLED") is what made the duel
+ * detail page crash on finished duels.
+ */
+export type { DuelStatus };
 
 /**
  * Public-safe duel shape returned by the API. Mirrors `toDuelSummary` on the
@@ -50,6 +52,10 @@ export interface DuelDetail {
   expiresAt: string;
   acceptedAt: string | null;
   createdAt: string;
+  /** Winner's user id, set only once the duel reaches COMPLETED; null otherwise. */
+  winnerId: string | null;
+  /** Lamports paid to the winner at settlement, as a decimal string; null until then. */
+  winnerPayoutLamports: string | null;
   creator: DuelParticipant;
   opponent: DuelParticipant | null;
   rule: { template: RuleTemplate; displayName: string } | null;

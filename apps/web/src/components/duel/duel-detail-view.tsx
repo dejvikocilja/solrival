@@ -16,15 +16,25 @@ import { getDuel, type DuelDetail, type DuelStatus } from "@/lib/api/duels";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/hooks/use-auth";
 
-const STATUS_META: Record<DuelStatus, { label: string; tone: BadgeProps["tone"] }> = {
+type StatusMeta = { label: string; tone: BadgeProps["tone"] };
+
+// Keyed by the canonical DuelStatus union (mirrors the Prisma enum). Every status
+// MUST have an entry; the `?? UNKNOWN_STATUS` read below is defence-in-depth so a
+// future enum value can never white-screen this page again.
+const STATUS_META: Record<DuelStatus, StatusMeta> = {
   CREATED: { label: "Opening", tone: "neutral" },
   WAITING_FOR_OPPONENT: { label: "Open challenge", tone: "rival" },
   ACCEPTED: { label: "Accepted", tone: "ember" },
   ACTIVE: { label: "Live now", tone: "victory" },
-  SETTLED: { label: "Settled", tone: "victory" },
+  VERIFYING: { label: "Verifying", tone: "ember" },
+  COMPLETED: { label: "Completed", tone: "victory" },
+  DISPUTED: { label: "Disputed", tone: "ember" },
+  REFUNDED: { label: "Refunded", tone: "neutral" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
   EXPIRED: { label: "Expired", tone: "neutral" },
 };
+
+const UNKNOWN_STATUS: StatusMeta = { label: "Unknown", tone: "neutral" };
 
 function shortWallet(addr: string): string {
   return addr.length > 8 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
@@ -73,7 +83,7 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
 
   const duel = query.data.duel;
   const game = GAME_META[duel.game];
-  const status = STATUS_META[duel.status];
+  const status = STATUS_META[duel.status] ?? UNKNOWN_STATUS;
   const ruleLabel = duel.rule ? RULE_META[duel.rule.template]?.label ?? duel.rule.displayName : "Custom rules";
   const ruleSummary = duel.rule ? RULE_META[duel.rule.template]?.summary : null;
 
@@ -83,8 +93,19 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
   const reward = pot - fee;
 
   const isCreator = user?.id === duel.creator.id;
+  const isParticipant = isCreator || (!!user && user.id === duel.opponent?.id);
   const isOpen = duel.status === "WAITING_FOR_OPPONENT";
   const canAccept = isOpen && !isCreator;
+
+  // For a finished duel, show the viewer's own result in place of the generic
+  // "Completed" badge: Win (green) or Loss (red). Non-participants still see status.
+  const outcome: StatusMeta | null =
+    duel.status === "COMPLETED" && isParticipant && duel.winnerId
+      ? user?.id === duel.winnerId
+        ? { label: "Win", tone: "victory" }
+        : { label: "Loss", tone: "danger" }
+      : null;
+  const headlineStatus = outcome ?? status;
 
   return (
     <>
@@ -96,7 +117,7 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={game.badgeTone}>{game.label}</Badge>
-                <Badge tone={status.tone}>{status.label}</Badge>
+                <Badge tone={headlineStatus.tone}>{headlineStatus.label}</Badge>
                 {isCreator ? <Badge tone="neutral">Your duel</Badge> : null}
               </div>
               <h1 className="font-display text-2xl font-semibold tracking-tight text-fg">{ruleLabel}</h1>

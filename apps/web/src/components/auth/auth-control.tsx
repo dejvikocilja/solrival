@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { toast } from "sonner";
-import { ChevronDown, Copy, LogOut, Wallet as WalletIcon, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, LogOut, Swords, User, Wallet as WalletIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BalancePill } from "@/components/credits/balance-pill";
 import { NotificationsMenu } from "@/components/notifications/notifications-menu";
@@ -150,6 +150,24 @@ function AccountMenu({
               </button>
             </div>
             <div className="p-1.5">
+              <Link
+                href="/profile"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+              >
+                <User className="h-4 w-4" aria-hidden />
+                Profile
+              </Link>
+              <Link
+                href="/duels"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+              >
+                <Swords className="h-4 w-4" aria-hidden />
+                My duels
+              </Link>
               <Link
                 href="/wallet"
                 role="menuitem"

@@ -11,6 +11,7 @@ const badgeVariants = cva(
         rival: "border-rival/30 bg-rival/12 text-rival",
         victory: "border-victory/30 bg-victory/12 text-victory",
         ember: "border-ember/30 bg-ember/12 text-ember",
+        danger: "border-danger/30 bg-danger/12 text-danger",
         cr: "border-cr/30 bg-cr/12 text-cr",
         bs: "border-bs/30 bg-bs/12 text-bs",
       },
