@@ -17,7 +17,7 @@ export function Stat({
       <Icon className="h-4 w-4 shrink-0 text-faint" aria-hidden />
       <div className="min-w-0">
         <div className="text-sm font-medium leading-tight text-fg tabular">{value}</div>
-        <div className="text-[11px] uppercase tracking-wide leading-tight text-faint">{label}</div>
+        <div className="text-overline uppercase leading-tight text-faint">{label}</div>
       </div>
     </div>
   );
