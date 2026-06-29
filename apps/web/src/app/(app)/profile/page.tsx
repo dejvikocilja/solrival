@@ -4,6 +4,7 @@ import { ArrowRight, BadgeCheck, Swords, Wallet as WalletIcon } from "lucide-rea
 import { getCurrentUser } from "@/server/auth/session";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { PageContainer, PageHeader } from "@/components/ui/page-shell";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -21,14 +22,12 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
 
   return (
-    <main className="mx-auto max-w-3xl px-4 pb-24 pt-8 sm:px-6 sm:pt-10">
-      <div className="mb-7 flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-[0.2em] text-rival">Your account</span>
-        <h1 className="font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">Profile</h1>
-        <p className="max-w-xl text-sm text-muted">
-          Your identity, competitive record, and account details on SolRival.
-        </p>
-      </div>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Your account"
+        title="Profile"
+        description="Your identity, competitive record, and account details on SolRival."
+      />
 
       {!user ? (
         <div className="rounded-xl border border-border bg-surface-2/40 px-6 py-16 text-center">
@@ -52,7 +51,7 @@ export default async function ProfilePage() {
           createdAt={user.createdAt}
         />
       )}
-    </main>
+    </PageContainer>
   );
 }
 

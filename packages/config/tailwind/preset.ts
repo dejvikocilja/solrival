@@ -46,6 +46,28 @@ const preset: Omit<Config, "content"> = {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
+      // Semantic type scale. Each step bundles size + line-height + tracking
+      // (+ weight where it's intrinsic) so a single class sets the whole style.
+      // Additive — Tailwind's defaults (text-sm, text-2xl, …) still work, but new
+      // screens should use these named steps for consistency.
+      fontSize: {
+        // Expressive — marketing / hero moments only
+        display: ["clamp(2.25rem, 4vw + 1rem, 3.25rem)", { lineHeight: "1.05", letterSpacing: "-0.03em", fontWeight: "600" }],
+        // Page titles
+        "heading-1": ["clamp(1.5rem, 1.2rem + 1.2vw, 1.875rem)", { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" }],
+        // Card / panel titles
+        "heading-2": ["1.25rem", { lineHeight: "1.25", letterSpacing: "-0.015em", fontWeight: "600" }],
+        // Sub-section titles
+        "heading-3": ["1.0625rem", { lineHeight: "1.3", letterSpacing: "-0.01em", fontWeight: "600" }],
+        // Body copy
+        "body-lg": ["1rem", { lineHeight: "1.6", letterSpacing: "0" }],
+        body: ["0.875rem", { lineHeight: "1.55", letterSpacing: "0" }],
+        "body-sm": ["0.8125rem", { lineHeight: "1.5", letterSpacing: "0" }],
+        // Supporting
+        caption: ["0.75rem", { lineHeight: "1.4", letterSpacing: "0" }],
+        // Uppercase eyebrow / label
+        overline: ["0.6875rem", { lineHeight: "1.2", letterSpacing: "0.18em", fontWeight: "500" }],
+      },
       boxShadow: {
         card: "0 1px 2px rgba(0,0,0,0.4), 0 12px 32px -16px rgba(0,0,0,0.7)",
         "card-hover": "0 1px 2px rgba(0,0,0,0.4), 0 18px 40px -18px rgba(0,0,0,0.8)",
