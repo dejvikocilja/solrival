@@ -123,14 +123,14 @@ export default function AdminDuelsPage() {
       key:    "shortCode",
       header: "Duel ID",
       render: (d) => (
-        <span className="font-mono text-xs text-zinc-300">{d.shortCode}</span>
+        <span className="font-mono text-xs text-fg">{d.shortCode}</span>
       ),
     },
     {
       key:    "creator",
       header: "Creator",
       render: (d) => (
-        <span className="text-zinc-300">@{d.creator?.username ?? "—"}</span>
+        <span className="text-fg">@{d.creator?.username ?? "—"}</span>
       ),
     },
     {
@@ -138,16 +138,16 @@ export default function AdminDuelsPage() {
       header: "Challenger",
       render: (d) =>
         d.opponent ? (
-          <span className="text-zinc-300">@{d.opponent.username}</span>
+          <span className="text-fg">@{d.opponent.username}</span>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-faint">—</span>
         ),
     },
     {
       key:    "game",
       header: "Game",
       render: (d) => (
-        <span className="text-xs text-zinc-400">{GAME_LABELS[d.game] ?? d.game}</span>
+        <span className="text-xs text-muted">{GAME_LABELS[d.game] ?? d.game}</span>
       ),
     },
     {
@@ -155,7 +155,7 @@ export default function AdminDuelsPage() {
       header:   "Stake",
       sortable: true,
       render:   (d) => (
-        <span className="tabular-nums text-zinc-200">{lamportsToSol(d.stakeLamports)} SOL</span>
+        <span className="tabular-nums text-fg">{lamportsToSol(d.stakeLamports)} SOL</span>
       ),
     },
     {
@@ -168,7 +168,7 @@ export default function AdminDuelsPage() {
       header:   "Created",
       sortable: true,
       render:   (d) => (
-        <span className="tabular-nums text-xs text-zinc-500">
+        <span className="tabular-nums text-xs text-faint">
           {new Date(d.createdAt).toLocaleDateString()}
         </span>
       ),
@@ -198,8 +198,8 @@ export default function AdminDuelsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-display text-xl font-semibold text-zinc-100">Duels</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="font-display text-xl font-semibold text-fg">Duels</h1>
+        <p className="text-sm text-faint">
           Manage all platform duels, cancel disputes, and force refunds.
         </p>
       </div>
@@ -216,7 +216,7 @@ export default function AdminDuelsPage() {
           onChange={(v) => handleFilter("game", v)}
           options={GAME_OPTIONS}
         />
-        <span className="ml-auto text-xs text-zinc-600">
+        <span className="ml-auto text-xs text-faint">
           {meta.total.toLocaleString()} duels
         </span>
       </div>
@@ -280,7 +280,7 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 outline-none transition-colors focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30"
+      className="rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm text-fg outline-none transition-colors focus:border-rival/30 focus:ring-1 focus:ring-rival/30"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -308,8 +308,8 @@ function ActionButton({
       className={[
         "rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-30",
         danger
-          ? "bg-red-950/60 text-red-400 hover:bg-red-900/60"
-          : "bg-zinc-800/80 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200",
+          ? "bg-danger/15 text-danger hover:bg-danger/25"
+          : "bg-surface-2/80 text-muted hover:bg-surface-2 hover:text-fg",
       ].join(" ")}
     >
       {label}

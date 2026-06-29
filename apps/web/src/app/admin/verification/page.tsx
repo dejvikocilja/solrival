@@ -118,21 +118,21 @@ export default function AdminVerificationPage() {
       key:    "duelId",
       header: "Duel",
       render: (j) => (
-        <span className="font-mono text-xs text-zinc-300">{j.duel?.shortCode ?? j.duelId.slice(0, 8)}</span>
+        <span className="font-mono text-xs text-fg">{j.duel?.shortCode ?? j.duelId.slice(0, 8)}</span>
       ),
     },
     {
       key:    "game",
       header: "Game",
       render: (j) => (
-        <span className="text-xs text-zinc-400">{GAME_LABELS[j.duel?.game ?? ""] ?? "—"}</span>
+        <span className="text-xs text-muted">{GAME_LABELS[j.duel?.game ?? ""] ?? "—"}</span>
       ),
     },
     {
       key:    "player1",
       header: "Player 1",
       render: (j) => (
-        <span className="text-zinc-300">@{j.duel?.creator?.username ?? "—"}</span>
+        <span className="text-fg">@{j.duel?.creator?.username ?? "—"}</span>
       ),
     },
     {
@@ -140,9 +140,9 @@ export default function AdminVerificationPage() {
       header: "Player 2",
       render: (j) =>
         j.duel?.opponent ? (
-          <span className="text-zinc-300">@{j.duel.opponent.username}</span>
+          <span className="text-fg">@{j.duel.opponent.username}</span>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-faint">—</span>
         ),
     },
     {
@@ -150,7 +150,7 @@ export default function AdminVerificationPage() {
       header:   "Polls",
       sortable: true,
       render:   (j) => (
-        <span className="tabular-nums text-zinc-400">{j.attempts}</span>
+        <span className="tabular-nums text-muted">{j.attempts}</span>
       ),
     },
     {
@@ -158,7 +158,7 @@ export default function AdminVerificationPage() {
       header:   "Last checked",
       sortable: true,
       render:   (j) => (
-        <span className="tabular-nums text-xs text-zinc-500">
+        <span className="tabular-nums text-xs text-faint">
           {new Date(j.updatedAt).toLocaleTimeString()}
         </span>
       ),
@@ -175,7 +175,7 @@ export default function AdminVerificationPage() {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); void rerunVerification(j.id) }}
-          className="rounded-md bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+          className="rounded-md bg-surface-2/80 px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg"
         >
           Re-run
         </button>
@@ -188,13 +188,13 @@ export default function AdminVerificationPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-xl font-semibold text-zinc-100">Verification</h1>
-          <p className="mt-0.5 text-sm text-zinc-500">
+          <h1 className="font-display text-xl font-semibold text-fg">Verification</h1>
+          <p className="mt-0.5 text-sm text-faint">
             Live verification job monitor — polling every 10 seconds.
           </p>
         </div>
         {lastUpdated && (
-          <p className="flex-shrink-0 rounded-md bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-500">
+          <p className="flex-shrink-0 rounded-md bg-surface-2/60 px-2.5 py-1.5 text-xs text-faint">
             Updated {lastUpdated.toLocaleTimeString()}
           </p>
         )}
@@ -229,7 +229,7 @@ export default function AdminVerificationPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
+        <div className="flex rounded-lg border border-border bg-surface/60 p-0.5">
           {STATUS_OPTIONS.map((o) => (
             <button
               key={o.value}
@@ -238,15 +238,15 @@ export default function AdminVerificationPage() {
               className={[
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 status === o.value
-                  ? "bg-violet-600 text-white"
-                  : "text-zinc-400 hover:text-zinc-200",
+                  ? "bg-rival text-white"
+                  : "text-muted hover:text-fg",
               ].join(" ")}
             >
               {o.label}
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-zinc-600">
+        <span className="ml-auto text-xs text-faint">
           {meta.total.toLocaleString()} jobs
         </span>
       </div>

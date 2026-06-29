@@ -80,16 +80,16 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
         role="dialog"
         aria-modal
         aria-labelledby={titleId}
-        className="w-full max-w-lg rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+        className="w-full max-w-lg rounded-2xl border border-border bg-bg shadow-2xl"
       >
-        <div className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
-          <h2 id={titleId} className="text-base font-semibold text-zinc-100">Resolve Dispute</h2>
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <h2 id={titleId} className="text-base font-semibold text-fg">Resolve Dispute</h2>
           <button
             type="button"
             disabled={loading}
             onClick={onClose}
             aria-label="Close"
-            className="rounded-lg p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-40"
+            className="rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -100,27 +100,27 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
         <form onSubmit={handleSubmit} noValidate>
           <div className="space-y-4 px-6 py-5">
             {/* Context */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-sm">
-              <p className="text-zinc-400">
-                Duel <span className="font-mono text-zinc-300">{dispute.duel?.shortCode}</span>
+            <div className="rounded-xl border border-border bg-surface/40 px-4 py-3 text-sm">
+              <p className="text-muted">
+                Duel <span className="font-mono text-fg">{dispute.duel?.shortCode}</span>
                 {" · "}
-                <span className="text-zinc-300">
+                <span className="text-fg">
                   @{dispute.duel?.creator?.username ?? "—"} vs @{dispute.duel?.opponent?.username ?? "—"}
                 </span>
               </p>
               {dispute.reason && (
-                <p className="mt-1 text-xs text-zinc-500">Reason: {dispute.reason}</p>
+                <p className="mt-1 text-xs text-faint">Reason: {dispute.reason}</p>
               )}
             </div>
 
             {/* Outcome */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-zinc-300">Outcome</label>
+              <label className="block text-sm font-medium text-fg">Outcome</label>
               <select
                 value={outcome}
                 onChange={(e) => setOutcome(e.target.value)}
                 disabled={loading}
-                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-300 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/30 disabled:opacity-50"
+                className="w-full rounded-lg border border-border-strong bg-surface px-3 py-2.5 text-sm text-fg outline-none focus:border-rival/30 focus:ring-1 focus:ring-rival/30 disabled:opacity-50"
               >
                 <option value="RESOLVED_CREATOR_WIN">Creator wins</option>
                 <option value="RESOLVED_OPPONENT_WIN">Challenger wins</option>
@@ -131,8 +131,8 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
 
             {/* Notes */}
             <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-zinc-300">
-                Resolution notes <span className="text-red-400">*</span>
+              <label className="block text-sm font-medium text-fg">
+                Resolution notes <span className="text-danger">*</span>
               </label>
               <textarea
                 rows={4}
@@ -140,23 +140,23 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
                 onChange={(e) => setNotes(e.target.value)}
                 disabled={loading}
                 placeholder="Explain the resolution decision, evidence reviewed, etc."
-                className="w-full resize-none rounded-lg border border-zinc-700 bg-zinc-900 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-colors focus:border-violet-500 focus:ring-1 focus:ring-violet-500/20 disabled:opacity-50"
+                className="w-full resize-none rounded-lg border border-border-strong bg-surface px-3.5 py-2.5 text-sm text-fg placeholder:text-faint outline-none transition-colors focus:border-rival/30 focus:ring-1 focus:ring-rival/30 disabled:opacity-50"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-3.5 py-3 text-xs text-red-400">
+              <p className="rounded-lg border border-danger/30 bg-danger/15 px-3.5 py-3 text-xs text-danger">
                 {error}
               </p>
             )}
           </div>
 
-          <div className="flex gap-3 border-t border-zinc-800 px-6 py-4">
+          <div className="flex gap-3 border-t border-border px-6 py-4">
             <button
               type="button"
               disabled={loading}
               onClick={onClose}
-              className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-40"
+              className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:bg-surface-2 disabled:opacity-40"
             >
               Cancel
             </button>
@@ -164,7 +164,7 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
               type="submit"
               disabled={loading || !notes.trim()}
               aria-busy={loading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-rival px-4 py-2.5 text-sm font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {loading ? (
                 <>
@@ -238,14 +238,14 @@ export default function AdminDisputesPage() {
       key:    "id",
       header: "Dispute ID",
       render: (d) => (
-        <span className="font-mono text-xs text-zinc-400">{d.id.slice(0, 8)}…</span>
+        <span className="font-mono text-xs text-muted">{d.id.slice(0, 8)}…</span>
       ),
     },
     {
       key:    "duel",
       header: "Duel",
       render: (d) => (
-        <span className="font-mono text-xs text-zinc-300">{d.duel?.shortCode ?? "—"}</span>
+        <span className="font-mono text-xs text-fg">{d.duel?.shortCode ?? "—"}</span>
       ),
     },
     {
@@ -253,18 +253,18 @@ export default function AdminDisputesPage() {
       header: "Players",
       render: (d) =>
         d.duel ? (
-          <span className="text-xs text-zinc-400">
+          <span className="text-xs text-muted">
             @{d.duel.creator?.username ?? "—"} vs @{d.duel.opponent?.username ?? "—"}
           </span>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-faint">—</span>
         ),
     },
     {
       key:    "game",
       header: "Game",
       render: (d) => (
-        <span className="text-xs text-zinc-500">{GAME_LABELS[d.duel?.game ?? ""] ?? "—"}</span>
+        <span className="text-xs text-faint">{GAME_LABELS[d.duel?.game ?? ""] ?? "—"}</span>
       ),
     },
     {
@@ -272,11 +272,11 @@ export default function AdminDisputesPage() {
       header: "Stake",
       render: (d) =>
         d.duel ? (
-          <span className="tabular-nums text-xs text-zinc-300">
+          <span className="tabular-nums text-xs text-fg">
             {(Number(d.duel.stakeLamports) / LAMPORTS).toFixed(4)} SOL
           </span>
         ) : (
-          <span className="text-zinc-600">—</span>
+          <span className="text-faint">—</span>
         ),
     },
     {
@@ -284,7 +284,7 @@ export default function AdminDisputesPage() {
       header:   "Opened",
       sortable: true,
       render:   (d) => (
-        <span className="tabular-nums text-xs text-zinc-500">
+        <span className="tabular-nums text-xs text-faint">
           {new Date(d.createdAt).toLocaleDateString()}
         </span>
       ),
@@ -293,7 +293,7 @@ export default function AdminDisputesPage() {
       key:    "reason",
       header: "Reason",
       render: (d) => (
-        <span className="max-w-[160px] truncate text-xs text-zinc-400">
+        <span className="max-w-[160px] truncate text-xs text-muted">
           {d.reason ?? "—"}
         </span>
       ),
@@ -311,12 +311,12 @@ export default function AdminDisputesPage() {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setResolving(d) }}
-            className="rounded-md bg-violet-900/40 px-2.5 py-1 text-xs font-medium text-violet-400 transition-colors hover:bg-violet-800/60 hover:text-violet-200"
+            className="rounded-md bg-rival/15 px-2.5 py-1 text-xs font-medium text-rival transition-colors hover:bg-rival/25 hover:text-rival"
           >
             Resolve
           </button>
         ) : (
-          <span className="text-xs text-zinc-600">—</span>
+          <span className="text-xs text-faint">—</span>
         ),
     },
   ]
@@ -325,8 +325,8 @@ export default function AdminDisputesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-zinc-100">Disputes</h1>
-        <p className="mt-0.5 text-sm text-zinc-500">
+        <h1 className="font-display text-xl font-semibold text-fg">Disputes</h1>
+        <p className="mt-0.5 text-sm text-faint">
           Review and resolve duel disputes raised by players or the verification engine.
         </p>
       </div>
@@ -349,7 +349,7 @@ export default function AdminDisputesPage() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-3">
-        <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
+        <div className="flex rounded-lg border border-border bg-surface/60 p-0.5">
           {([["open", "Open only"], ["all", "All"]] as const).map(([v, l]) => (
             <button
               key={v}
@@ -358,15 +358,15 @@ export default function AdminDisputesPage() {
               className={[
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 filter === v
-                  ? "bg-violet-600 text-white"
-                  : "text-zinc-400 hover:text-zinc-200",
+                  ? "bg-rival text-white"
+                  : "text-muted hover:text-fg",
               ].join(" ")}
             >
               {l}
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-zinc-600">
+        <span className="ml-auto text-xs text-faint">
           {meta.total.toLocaleString()} disputes
         </span>
       </div>

@@ -85,8 +85,8 @@ export default function AdminTournamentsPage() {
       sortable: true,
       render:   (t) => (
         <div>
-          <p className="font-medium text-zinc-200">{t.name}</p>
-          <p className="text-xs text-zinc-500">{t.rule?.displayName ?? "—"}</p>
+          <p className="font-medium text-fg">{t.name}</p>
+          <p className="text-xs text-faint">{t.rule?.displayName ?? "—"}</p>
         </div>
       ),
     },
@@ -94,14 +94,14 @@ export default function AdminTournamentsPage() {
       key:    "game",
       header: "Game",
       render: (t) => (
-        <span className="text-xs text-zinc-400">{GAME_LABELS[t.game] ?? t.game}</span>
+        <span className="text-xs text-muted">{GAME_LABELS[t.game] ?? t.game}</span>
       ),
     },
     {
       key:    "players",
       header: "Players",
       render: (t) => (
-        <span className="tabular-nums text-zinc-300">
+        <span className="tabular-nums text-fg">
           {t._count.players} / {t.maxParticipants}
         </span>
       ),
@@ -111,7 +111,7 @@ export default function AdminTournamentsPage() {
       header:   "Buy-in",
       sortable: true,
       render:   (t) => (
-        <span className="tabular-nums text-zinc-300">
+        <span className="tabular-nums text-fg">
           {lamportsToSol(t.entryFeeLamports)} SOL
         </span>
       ),
@@ -121,7 +121,7 @@ export default function AdminTournamentsPage() {
       header:   "Prize Pool",
       sortable: true,
       render:   (t) => (
-        <span className="tabular-nums font-medium text-emerald-400">
+        <span className="tabular-nums font-medium text-victory">
           {lamportsToSol(t.prizePoolLamports)} SOL
         </span>
       ),
@@ -131,7 +131,7 @@ export default function AdminTournamentsPage() {
       header:   "Starts",
       sortable: true,
       render:   (t) => (
-        <span className="tabular-nums text-xs text-zinc-400">
+        <span className="tabular-nums text-xs text-muted">
           {new Date(t.startTime).toLocaleDateString()}
         </span>
       ),
@@ -153,7 +153,7 @@ export default function AdminTournamentsPage() {
               <button
                 type="button"
                 onClick={() => setConfirm({ id: t.id, name: t.name, action: "start" })}
-                className="rounded-md bg-emerald-950/60 px-2.5 py-1 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-900/60"
+                className="rounded-md bg-victory/15 px-2.5 py-1 text-xs font-medium text-victory transition-colors hover:bg-victory/25"
               >
                 Start
               </button>
@@ -163,7 +163,7 @@ export default function AdminTournamentsPage() {
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="rounded-md bg-zinc-800/80 px-2.5 py-1 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+              className="rounded-md bg-surface-2/80 px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             >
               Bracket ↗
             </a>
@@ -171,7 +171,7 @@ export default function AdminTournamentsPage() {
               <button
                 type="button"
                 onClick={() => setConfirm({ id: t.id, name: t.name, action: "cancel" })}
-                className="rounded-md bg-red-950/60 px-2.5 py-1 text-xs font-medium text-red-400 transition-colors hover:bg-red-900/60"
+                className="rounded-md bg-danger/15 px-2.5 py-1 text-xs font-medium text-danger transition-colors hover:bg-danger/25"
               >
                 Cancel
               </button>
@@ -201,8 +201,8 @@ export default function AdminTournamentsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-zinc-100">Tournaments</h1>
-        <p className="mt-0.5 text-sm text-zinc-500">
+        <h1 className="font-display text-xl font-semibold text-fg">Tournaments</h1>
+        <p className="mt-0.5 text-sm text-faint">
           Manage tournament lifecycle — start brackets, view standings, and cancel events.
         </p>
       </div>

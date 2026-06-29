@@ -244,7 +244,7 @@ export default async function AdminAnalyticsPage() {
   } catch {
     return (
       <div className="flex items-center justify-center py-20">
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-faint">
           Unable to load analytics — ensure the database is connected.
         </p>
       </div>
@@ -257,8 +257,8 @@ export default async function AdminAnalyticsPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-zinc-100">Overview</h1>
-        <p className="mt-0.5 text-sm text-zinc-500">Platform-wide metrics and activity.</p>
+        <h1 className="font-display text-xl font-semibold text-fg">Overview</h1>
+        <p className="mt-0.5 text-sm text-faint">Platform-wide metrics and activity.</p>
       </div>
 
       {/* Primary stat cards */}
@@ -301,19 +301,19 @@ export default async function AdminAnalyticsPage() {
       {/* Charts */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Duels per day */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="rounded-xl border border-border bg-surface/40 p-5">
           <div className="mb-4">
-            <h2 className="text-sm font-semibold text-zinc-200">Duels per day</h2>
-            <p className="text-xs text-zinc-500">Last 14 days</p>
+            <h2 className="text-sm font-semibold text-fg">Duels per day</h2>
+            <p className="text-xs text-faint">Last 14 days</p>
           </div>
           <BarChart data={data.duelsPerDay} />
         </div>
 
         {/* Volume per day */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="rounded-xl border border-border bg-surface/40 p-5">
           <div className="mb-4">
-            <h2 className="text-sm font-semibold text-zinc-200">Volume (SOL) per day</h2>
-            <p className="text-xs text-zinc-500">Last 14 days · total stake × 2</p>
+            <h2 className="text-sm font-semibold text-fg">Volume (SOL) per day</h2>
+            <p className="text-xs text-faint">Last 14 days · total stake × 2</p>
           </div>
           <LineChart data={data.volumePerDay} />
         </div>
@@ -321,7 +321,7 @@ export default async function AdminAnalyticsPage() {
 
       {/* Win rate by game */}
       <div>
-        <h2 className="mb-4 text-sm font-semibold text-zinc-200">Completed matches by game</h2>
+        <h2 className="mb-4 text-sm font-semibold text-fg">Completed matches by game</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <GameCard
             game="Clash Royale"
@@ -354,20 +354,20 @@ function GameCard({
 }) {
   const pct = total > 0 ? Math.round((matches / total) * 100) : 0
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+    <div className="rounded-xl border border-border bg-surface/40 p-5">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-zinc-300">{game}</p>
-        <span className="text-sm font-semibold tabular-nums text-zinc-100">
+        <p className="text-sm font-medium text-fg">{game}</p>
+        <span className="text-sm font-semibold tabular-nums text-fg">
           {matches.toLocaleString()} matches
         </span>
       </div>
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-2">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${pct}%`, backgroundColor: color }}
         />
       </div>
-      <p className="mt-1.5 text-xs text-zinc-600">{pct}% of all completed matches</p>
+      <p className="mt-1.5 text-xs text-faint">{pct}% of all completed matches</p>
     </div>
   )
 }

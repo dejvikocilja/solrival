@@ -31,7 +31,7 @@ export default function AdminErrorPage({ error, reset }: ErrorPageProps) {
         </div>
 
         {process.env.NODE_ENV !== 'production' && (
-          <pre className="rounded bg-surface-2 p-3 text-left text-xs text-red-400 overflow-auto max-h-40">
+          <pre className="rounded bg-surface-2 p-3 text-left text-xs text-danger overflow-auto max-h-40">
             {error.message}
           </pre>
         )}

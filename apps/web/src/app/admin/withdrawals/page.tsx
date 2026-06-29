@@ -107,20 +107,20 @@ const submitPayout = async () => {
       header: "Player",
       render: (r) => (
         <div>
-          <p className="text-sm text-zinc-100">{r.user.username}</p>
-          <p className="font-mono text-xs text-zinc-500">{shortWallet(r.user.walletAddress)}</p>
+          <p className="text-sm text-fg">{r.user.username}</p>
+          <p className="font-mono text-xs text-faint">{shortWallet(r.user.walletAddress)}</p>
         </div>
       ),
     },
     {
       key: "amount",
       header: "Amount",
-      render: (r) => <span className="font-mono tabular-nums text-sm text-zinc-100">◎{sol(r.amountLamports)}</span>,
+      render: (r) => <span className="font-mono tabular-nums text-sm text-fg">◎{sol(r.amountLamports)}</span>,
     },
     {
       key: "destination",
       header: "Destination",
-      render: (r) => <span className="font-mono text-xs text-zinc-400">{shortWallet(r.destinationWallet)}</span>,
+      render: (r) => <span className="font-mono text-xs text-muted">{shortWallet(r.destinationWallet)}</span>,
     },
     {
       key: "status",
@@ -128,14 +128,14 @@ const submitPayout = async () => {
       render: (r) => (
         <div className="flex flex-col gap-1">
           <StatusBadge status={r.status} />
-          {r.heldReason ? <span className="text-xs text-amber-400/80">{r.heldReason}</span> : null}
+          {r.heldReason ? <span className="text-xs text-ember/80">{r.heldReason}</span> : null}
         </div>
       ),
     },
     {
       key: "createdAt",
       header: "Requested",
-      render: (r) => <span className="text-xs text-zinc-500">{new Date(r.createdAt).toLocaleString()}</span>,
+      render: (r) => <span className="text-xs text-faint">{new Date(r.createdAt).toLocaleString()}</span>,
     },
     {
       key: "actions",
@@ -147,14 +147,14 @@ const submitPayout = async () => {
               <button
                 type="button"
                 onClick={() => setReview({ row: r, decision: "APPROVE" })}
-                className="rounded-lg bg-emerald-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+                className="rounded-lg bg-victory/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-victory"
               >
                 Approve
               </button>
               <button
                 type="button"
                 onClick={() => setReview({ row: r, decision: "REJECT" })}
-                className="rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-900/40"
+                className="rounded-lg border border-danger/30 bg-danger/15 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/25"
               >
                 Reject
               </button>
@@ -167,7 +167,7 @@ const submitPayout = async () => {
               <button
                 type="button"
                 onClick={() => setPayout(r)}
-                className="rounded-lg bg-violet-600/90 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-500"
+                className="rounded-lg bg-rival/90 px-3 py-1.5 text-xs font-medium text-white hover:brightness-110"
               >
                 Pay out
               </button>
@@ -182,12 +182,12 @@ const submitPayout = async () => {
   return (
     <div className="space-y-5">
       <header className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600/20 text-violet-300">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rival/20 text-rival">
           <Banknote className="h-5 w-5" />
         </span>
         <div>
-          <h1 className="text-lg font-semibold text-zinc-100">Withdrawals</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-lg font-semibold text-fg">Withdrawals</h1>
+          <p className="text-sm text-faint">
             Requests with an active dispute are held here for manual review. All others auto-approve.
           </p>
         </div>
@@ -205,7 +205,7 @@ const submitPayout = async () => {
             }}
             className={[
               "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-              status === s ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300",
+              status === s ? "bg-surface-2 text-fg" : "text-faint hover:bg-surface hover:text-fg",
             ].join(" ")}
           >
             {s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}

@@ -59,19 +59,19 @@ export function ConfirmModal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+        className="w-full max-w-sm rounded-2xl border border-border bg-bg shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
           <div>
-            <h2 id={titleId} className="text-base font-semibold text-zinc-100">{title}</h2>
+            <h2 id={titleId} className="text-base font-semibold text-fg">{title}</h2>
           </div>
           <button
             type="button"
             aria-label="Close"
             disabled={loading}
             onClick={onClose}
-            className="mt-0.5 rounded-lg p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 disabled:opacity-40"
+            className="mt-0.5 rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -81,16 +81,16 @@ export function ConfirmModal({
 
         {/* Body */}
         <div className="px-6 py-5">
-          <p id={descId} className="text-sm text-zinc-400 leading-relaxed">{description}</p>
+          <p id={descId} className="text-sm text-muted leading-relaxed">{description}</p>
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 border-t border-zinc-800 px-6 py-4">
+        <div className="flex gap-3 border-t border-border px-6 py-4">
           <button
             type="button"
             disabled={loading}
             onClick={onClose}
-            className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
+            className="flex-1 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:bg-surface-2 hover:text-fg disabled:opacity-40"
           >
             Cancel
           </button>
@@ -102,8 +102,8 @@ export function ConfirmModal({
             className={[
               "flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40",
               danger
-                ? "bg-red-600 hover:bg-red-500"
-                : "bg-violet-600 hover:bg-violet-500",
+                ? "bg-danger hover:brightness-110"
+                : "bg-rival hover:brightness-110",
             ].join(" ")}
           >
             {loading ? (

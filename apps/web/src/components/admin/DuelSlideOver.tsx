@@ -50,8 +50,8 @@ function shortAddr(addr: string) {
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2.5">
-      <span className="flex-shrink-0 text-xs text-zinc-500">{label}</span>
-      <span className="text-right text-xs font-medium text-zinc-300">{value}</span>
+      <span className="flex-shrink-0 text-xs text-faint">{label}</span>
+      <span className="text-right text-xs font-medium text-fg">{value}</span>
     </div>
   )
 }
@@ -95,21 +95,21 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
         role="dialog"
         aria-modal
         aria-label="Duel details"
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-zinc-800 bg-zinc-950 shadow-2xl"
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-border bg-bg shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
-            <h2 className="text-base font-semibold text-zinc-100">Duel Details</h2>
+            <h2 className="text-base font-semibold text-fg">Duel Details</h2>
             {data && (
-              <p className="mt-0.5 font-mono text-xs text-zinc-500">{data.shortCode}</p>
+              <p className="mt-0.5 font-mono text-xs text-faint">{data.shortCode}</p>
             )}
           </div>
           <button
             type="button"
             aria-label="Close panel"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+            className="rounded-lg p-1.5 text-faint transition-colors hover:bg-surface-2 hover:text-fg"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -122,13 +122,13 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
           {loading && (
             <div className="space-y-3 animate-pulse">
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-4 rounded bg-zinc-800" style={{ width: `${60 + (i % 3) * 15}%` }} />
+                <div key={i} className="h-4 rounded bg-surface-2" style={{ width: `${60 + (i % 3) * 15}%` }} />
               ))}
             </div>
           )}
 
           {error && (
-            <p className="rounded-lg border border-red-900/60 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+            <p className="rounded-lg border border-danger/30 bg-danger/15 px-4 py-3 text-sm text-danger">
               {error}
             </p>
           )}
@@ -138,18 +138,18 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
               {/* Status + game */}
               <div className="flex items-center gap-2">
                 <StatusBadge status={data.status} />
-                <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                <span className="rounded-md bg-surface-2/60 px-2 py-0.5 text-xs font-medium text-muted">
                   {data.game.replace("_", " ")}
                 </span>
-                <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 text-xs font-medium text-zinc-400">
+                <span className="rounded-md bg-surface-2/60 px-2 py-0.5 text-xs font-medium text-muted">
                   {data.visibility}
                 </span>
               </div>
 
               {/* Core info */}
               <section>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">Overview</h3>
-                <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4">
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Overview</h3>
+                <div className="divide-y divide-border/60 rounded-xl border border-border bg-surface/40 px-4">
                   <Row label="Duel ID"      value={<span className="font-mono">{data.id.slice(0, 8)}…</span>} />
                   <Row label="Stake"        value={`${lamportsToSol(data.stakeLamports)} SOL`} />
                   <Row label="Platform fee" value={`${(data.platformFeeBps / 100).toFixed(1)}%`} />
@@ -164,15 +164,15 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
 
               {/* Players */}
               <section>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">Players</h3>
-                <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4">
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Players</h3>
+                <div className="divide-y divide-border/60 rounded-xl border border-border bg-surface/40 px-4">
                   <Row
                     label="Creator"
                     value={
                       data.creator ? (
                         <span>
-                          <span className="text-zinc-200">@{data.creator.username}</span>{" "}
-                          <span className="text-zinc-600">{shortAddr(data.creator.walletAddress)}</span>
+                          <span className="text-fg">@{data.creator.username}</span>{" "}
+                          <span className="text-faint">{shortAddr(data.creator.walletAddress)}</span>
                         </span>
                       ) : "—"
                     }
@@ -182,17 +182,17 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
                     value={
                       data.opponent ? (
                         <span>
-                          <span className="text-zinc-200">@{data.opponent.username}</span>{" "}
-                          <span className="text-zinc-600">{shortAddr(data.opponent.walletAddress)}</span>
+                          <span className="text-fg">@{data.opponent.username}</span>{" "}
+                          <span className="text-faint">{shortAddr(data.opponent.walletAddress)}</span>
                         </span>
-                      ) : <span className="text-zinc-600">—</span>
+                      ) : <span className="text-faint">—</span>
                     }
                   />
                   {data.winner && (
                     <Row
                       label="Winner"
                       value={
-                        <span className="text-emerald-400">@{data.winner.username}</span>
+                        <span className="text-victory">@{data.winner.username}</span>
                       }
                     />
                   )}
@@ -202,8 +202,8 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
               {/* Verification */}
               {data.verificationJob && (
                 <section>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">Verification</h3>
-                  <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4">
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Verification</h3>
+                  <div className="divide-y divide-border/60 rounded-xl border border-border bg-surface/40 px-4">
                     <Row label="Job status" value={<StatusBadge status={data.verificationJob.status} />} />
                     <Row label="Attempts"   value={String(data.verificationJob.attempts)} />
                     {data.verificationJob.completedAt && (
@@ -211,7 +211,7 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
                     )}
                     {data.verificationJob.lastError && (
                       <Row label="Last error" value={
-                        <span className="text-red-400 break-all">{data.verificationJob.lastError}</span>
+                        <span className="text-danger break-all">{data.verificationJob.lastError}</span>
                       } />
                     )}
                   </div>
@@ -221,8 +221,8 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
               {/* Dispute */}
               {data.dispute && (
                 <section>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">Dispute</h3>
-                  <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4">
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">Dispute</h3>
+                  <div className="divide-y divide-border/60 rounded-xl border border-border bg-surface/40 px-4">
                     <Row label="Status" value={<StatusBadge status={data.dispute.status} />} />
                     {data.dispute.reason && (
                       <Row label="Reason" value={data.dispute.reason} />
@@ -234,8 +234,8 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
               {/* On-chain */}
               {data.escrowPda && (
                 <section>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">On-Chain</h3>
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4">
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-faint">On-Chain</h3>
+                  <div className="rounded-xl border border-border bg-surface/40 px-4">
                     <Row
                       label="Escrow PDA"
                       value={
@@ -243,7 +243,7 @@ export function DuelSlideOver({ duelId, onClose }: DuelSlideOverProps) {
                           href={`https://explorer.solana.com/address/${data.escrowPda}?cluster=devnet`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-mono text-violet-400 hover:text-violet-300 transition-colors"
+                          className="font-mono text-rival hover:text-rival transition-colors"
                         >
                           {shortAddr(data.escrowPda)}↗
                         </a>
