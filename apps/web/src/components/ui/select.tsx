@@ -15,6 +15,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         className={cn(
           "h-9 w-full appearance-none rounded-md border border-border bg-surface-2 pl-3 pr-9 text-sm text-fg",
           "transition-colors hover:border-border-strong focus-visible:focus-ring",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          "aria-[invalid=true]:border-danger aria-[invalid=true]:hover:border-danger",
           className,
         )}
         {...props}

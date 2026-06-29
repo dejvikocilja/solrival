@@ -33,6 +33,8 @@ export const NumberInput = React.forwardRef<
     className={cn(
       "h-9 w-full rounded-md border border-border bg-surface-2 px-3 text-sm text-fg tabular placeholder:text-faint",
       "transition-colors hover:border-border-strong focus-visible:focus-ring",
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      "aria-[invalid=true]:border-danger aria-[invalid=true]:hover:border-danger",
       className,
     )}
     {...props}
@@ -49,12 +51,33 @@ export const TextInput = React.forwardRef<
     className={cn(
       "h-9 w-full rounded-md border border-border bg-surface-2 px-3 text-sm text-fg placeholder:text-faint",
       "transition-colors hover:border-border-strong focus-visible:focus-ring",
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      "aria-[invalid=true]:border-danger aria-[invalid=true]:hover:border-danger",
       className,
     )}
     {...props}
   />
 ));
 TextInput.displayName = "TextInput";
+
+export const Textarea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ className, rows = 4, ...props }, ref) => (
+  <textarea
+    ref={ref}
+    rows={rows}
+    className={cn(
+      "w-full resize-y rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-faint",
+      "transition-colors hover:border-border-strong focus-visible:focus-ring",
+      "disabled:cursor-not-allowed disabled:opacity-50",
+      "aria-[invalid=true]:border-danger aria-[invalid=true]:hover:border-danger",
+      className,
+    )}
+    {...props}
+  />
+));
+Textarea.displayName = "Textarea";
 
 /** Inline validation message rendered under a Field's control. */
 export function FieldError({ children }: { children?: React.ReactNode }) {
