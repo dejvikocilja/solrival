@@ -1,0 +1,107 @@
+diff --git a/apps/web/src/app/globals.css b/apps/web/src/app/globals.css
+index da8b8dc..d418066 100644
+--- a/apps/web/src/app/globals.css
++++ b/apps/web/src/app/globals.css
+@@ -3,31 +3,31 @@
+ @tailwind utilities;
+ 
+ :root {
+-  /* Arena base */
+-  --bg: 222 30% 5%;
+-  --bg-raised: 225 24% 8%;
+-  --surface: 225 22% 11%;
+-  --surface-2: 226 22% 15%;
+-  --border: 226 18% 21%;
+-  --border-strong: 226 16% 30%;
++  /* Arena base — deeper, cooler near-black with hairline surfaces */
++  --bg: 228 24% 4%;
++  --bg-raised: 225 25% 6%;
++  --surface: 227 18% 10%;
++  --surface-2: 225 18% 13%;
++  --border: 225 13% 16%;
++  --border-strong: 225 12% 26%;
+ 
+   /* Text */
+-  --fg: 222 30% 96%;
+-  --muted: 222 12% 66%;
+-  --faint: 222 10% 46%;
++  --fg: 225 20% 96%;
++  --muted: 225 9% 67%;
++  --faint: 225 7% 44%;
+ 
+-  /* Functional accents */
+-  --rival: 250 100% 68%;
++  /* Functional accents — purple acts, green is money */
++  --rival: 258 90% 66%;
+   --rival-fg: 0 0% 100%;
+-  --victory: 168 76% 54%;
+-  --ember: 38 100% 56%;
+-  --danger: 354 100% 70%;
++  --victory: 158 64% 52%;
++  --ember: 37 91% 55%;
++  --danger: 358 86% 64%;
+ 
+   /* Per-game identity */
+-  --cr: 222 100% 63%;
+-  --bs: 280 100% 66%;
++  --cr: 175 66% 51%;
++  --bs: 274 100% 75%;
+ 
+-  --ring: 250 100% 68%;
++  --ring: 258 90% 66%;
+   --radius: 0.875rem;
+ 
+   color-scheme: dark;
+@@ -57,8 +57,8 @@ body::before {
+   inset: 0;
+   z-index: -1;
+   background:
+-    radial-gradient(60rem 40rem at 80% -10%, hsl(var(--rival) / 0.10), transparent 60%),
+-    radial-gradient(50rem 36rem at 0% 0%, hsl(var(--cr) / 0.06), transparent 55%);
++    radial-gradient(60rem 40rem at 80% -10%, hsl(var(--rival) / 0.14), transparent 60%),
++    radial-gradient(50rem 36rem at 0% 0%, hsl(var(--cr) / 0.10), transparent 55%);
+   pointer-events: none;
+ }
+ 
+diff --git a/apps/web/src/app/layout.tsx b/apps/web/src/app/layout.tsx
+index 2e9b461..4c6830f 100644
+--- a/apps/web/src/app/layout.tsx
++++ b/apps/web/src/app/layout.tsx
+@@ -16,7 +16,7 @@ export const metadata: Metadata = {
+ };
+ 
+ export const viewport: Viewport = {
+-  themeColor: "#0A0B0F",
++  themeColor: "#08090D",
+   width: "device-width",
+   initialScale: 1,
+ };
+diff --git a/apps/web/src/components/site-header.tsx b/apps/web/src/components/site-header.tsx
+index 1a122ad..defa227 100644
+--- a/apps/web/src/components/site-header.tsx
++++ b/apps/web/src/components/site-header.tsx
+@@ -1,5 +1,4 @@
+ import Link from "next/link";
+-import { Swords } from "lucide-react";
+ import { buttonVariants } from "@/components/ui/button";
+ import { AuthControl } from "@/components/auth/auth-control";
+ import { cn } from "@/lib/utils";
+@@ -8,13 +7,11 @@ export function SiteHeader() {
+   return (
+     <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-xl">
+       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+-        <Link href="/" className="flex items-center gap-2 focus-visible:focus-ring rounded-md">
+-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rival text-rival-fg">
+-            <Swords className="h-4 w-4" />
+-          </span>
+-          <span className="font-display text-[15px] font-semibold tracking-tight text-fg">
+-            Sol<span className="text-rival">Rival</span>
+-          </span>
++        <Link href="/" className="flex items-center gap-2.5 rounded-md focus-visible:focus-ring" aria-label="SolRival home">
++          {/* eslint-disable-next-line @next/next/no-img-element */}
++          <img src="/solrival-emblem.png" alt="" width={36} height={36} className="h-9 w-9 shrink-0" />
++          {/* eslint-disable-next-line @next/next/no-img-element */}
++          <img src="/solrival-wordmark-white.png" alt="SolRival" className="h-[18px] w-auto" />
+         </Link>
+         <nav className="flex items-center gap-1.5">
+           <Link

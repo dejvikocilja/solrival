@@ -3,31 +3,31 @@
 @tailwind utilities;
 
 :root {
-  /* Arena base */
-  --bg: 222 30% 5%;
-  --bg-raised: 225 24% 8%;
-  --surface: 225 22% 11%;
-  --surface-2: 226 22% 15%;
-  --border: 226 18% 21%;
-  --border-strong: 226 16% 30%;
+  /* Arena base — deeper, cooler near-black with hairline surfaces */
+  --bg: 228 24% 4%;
+  --bg-raised: 225 25% 6%;
+  --surface: 227 18% 10%;
+  --surface-2: 225 18% 13%;
+  --border: 225 13% 16%;
+  --border-strong: 225 12% 26%;
 
   /* Text */
-  --fg: 222 30% 96%;
-  --muted: 222 12% 66%;
-  --faint: 222 10% 46%;
+  --fg: 225 20% 96%;
+  --muted: 225 9% 67%;
+  --faint: 225 7% 44%;
 
-  /* Functional accents */
-  --rival: 250 100% 68%;
+  /* Functional accents — purple acts, green is money */
+  --rival: 258 90% 66%;
   --rival-fg: 0 0% 100%;
-  --victory: 168 76% 54%;
-  --ember: 38 100% 56%;
-  --danger: 354 100% 70%;
+  --victory: 158 64% 52%;
+  --ember: 37 91% 55%;
+  --danger: 358 86% 64%;
 
   /* Per-game identity */
-  --cr: 222 100% 63%;
-  --bs: 280 100% 66%;
+  --cr: 175 66% 51%;
+  --bs: 274 100% 75%;
 
-  --ring: 250 100% 68%;
+  --ring: 258 90% 66%;
   --radius: 0.875rem;
 
   color-scheme: dark;
@@ -57,8 +57,8 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(60rem 40rem at 80% -10%, hsl(var(--rival) / 0.10), transparent 60%),
-    radial-gradient(50rem 36rem at 0% 0%, hsl(var(--cr) / 0.06), transparent 55%);
+    radial-gradient(60rem 40rem at 80% -10%, hsl(var(--rival) / 0.14), transparent 60%),
+    radial-gradient(50rem 36rem at 0% 0%, hsl(var(--cr) / 0.10), transparent 55%);
   pointer-events: none;
 }
 
