@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BadgeCheck, ShieldCheck, Swords, Zap } from "lucide-react";
+import { ArrowRight, BadgeCheck, ShieldCheck, Zap } from "lucide-react";
+import { listDuelsQuerySchema } from "@solrival/shared";
+import { getMarketplace } from "@/server/services/duel/marketplace";
 import { buttonVariants } from "@/components/ui/button";
+import { DuelCard } from "@/components/marketplace/duel-card";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "SolRival — Competitive 1v1 duels for real stakes",
   description:
-    "Challenge players to skill-based 1v1 duels in Clash Royale and Brawl Stars. Both rivals stake the same, the pot is held in escrow, and the winner is paid automatically.",
+    "Challenge players to skill-based 1v1 duels in Clash Royale and Brawl Stars. Both rivals stake the same, the pot is held in Solana escrow, and the winner is paid automatically.",
 };
+
+export const dynamic = "force-dynamic";
 
 const STEPS = [
   {
@@ -19,7 +24,7 @@ const STEPS = [
   {
     n: "02",
     title: "Escrow",
-    body: "The moment a rival accepts, both stakes lock in escrow. Neither player can touch the pot until the match is settled.",
+    body: "The moment a rival accepts, both stakes lock in escrow. Neither player can touch the pot until the match settles.",
   },
   {
     n: "03",
@@ -28,62 +33,103 @@ const STEPS = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { duels } = await getMarketplace(listDuelsQuerySchema.parse({}));
+  const liveDuels = duels.slice(0, 3);
+
   return (
     <div className="relative">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pb-24 sm:pt-20">
-        <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="animate-fade-up">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-3 py-1 text-xs font-medium text-muted">
-              <span className="flex h-1.5 w-1.5 rounded-full bg-victory" aria-hidden />
-              1v1 skill duels · settled on Solana
-            </span>
-
-            <h1 className="mt-5 font-display text-4xl font-semibold leading-[1.05] tracking-tight text-fg sm:text-5xl lg:text-6xl">
-              Put your game
-              <br />
-              on the line.
-            </h1>
-
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
-              Challenge any player to a 1v1 in Clash Royale or Brawl Stars. Both rivals stake the
-              same, the pot is held in escrow, and the winner is paid the moment the result is
-              verified.
-            </p>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Link href="/marketplace" className={cn(buttonVariants({ variant: "primary", size: "lg" }))}>
-                Browse open duels
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href="/duels/create" className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}>
-                Create a duel
-              </Link>
-            </div>
-
-            <dl className="mt-10 grid max-w-lg grid-cols-3 gap-6 border-t border-border pt-6">
-              <Metric value="2 games" label="Clash Royale · Brawl Stars" />
-              <Metric value="Auto" label="Result verification" />
-              <Metric value="Instant" label="Winner payout" />
-            </dl>
+      <section className="mx-auto max-w-3xl px-4 pb-12 pt-16 text-center sm:px-6 sm:pb-16 sm:pt-24">
+        <div className="animate-fade-up">
+          <div className="relative mx-auto mb-7 h-24 w-24">
+            <div
+              className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-rival/45 to-cr/30 blur-2xl"
+              aria-hidden
+            />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/solrival-emblem.png" alt="" width={96} height={96} className="h-24 w-24" />
           </div>
 
-          {/* Signature: the duel → escrow → payout itself */}
-          <div className="animate-fade-up [animation-delay:120ms]">
-            <EscrowVisual />
+          <h1 className="font-display text-5xl font-bold leading-[1.02] tracking-tight text-fg sm:text-6xl">
+            Beat your rival.
+            <br />
+            Take the{" "}
+            <span className="bg-gradient-to-r from-rival to-cr bg-clip-text text-transparent">pot</span>.
+          </h1>
+
+          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
+            Stake SOL, challenge anyone to Clash Royale or Brawl Stars, and win on skill alone. Escrow
+            holds the pot and pays the winner automatically — no house, no luck.
+          </p>
+
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
+            <Link href="/duels/create" className={cn(buttonVariants({ variant: "primary", size: "lg" }))}>
+              Create a duel
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}>
+              Browse open duels
+            </Link>
+          </div>
+
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-x-7 gap-y-3 text-sm text-muted">
+            <span className="inline-flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-rival" aria-hidden />
+              Funds in escrow
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Zap className="h-4 w-4 text-rival" aria-hidden />
+              Instant payouts
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <BadgeCheck className="h-4 w-4 text-rival" aria-hidden />
+              Auto-verified results
+            </span>
           </div>
         </div>
       </section>
 
+      {/* ── Live now ─────────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-victory shadow-[0_0_8px_hsl(var(--victory))]" aria-hidden />
+            <h2 className="text-overline uppercase text-muted">Live now</h2>
+          </div>
+          <Link href="/marketplace" className="text-sm text-muted transition-colors hover:text-fg">
+            View all →
+          </Link>
+        </div>
+
+        {liveDuels.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {liveDuels.map((duel) => (
+              <DuelCard key={duel.id} duel={duel} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-border bg-surface/40 px-6 py-14 text-center">
+            <h3 className="text-heading-3 text-fg">No open duels right now</h3>
+            <p className="mt-1 max-w-sm text-body-sm text-muted">
+              Be the first to put a challenge on the board and let a rival come to you.
+            </p>
+            <Link
+              href="/duels/create"
+              className={cn(buttonVariants({ variant: "primary", size: "md" }), "mt-5")}
+            >
+              Create the first duel
+            </Link>
+          </div>
+        )}
+      </section>
+
       {/* ── How it works ─────────────────────────────────────────────────── */}
       <section className="border-t border-border bg-bg-raised/40">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
           <div className="max-w-xl">
-            <h2 className="font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
-              From challenge to payout
-            </h2>
-            <p className="mt-2 text-sm text-muted sm:text-base">
+            <h2 className="font-display text-heading-1 text-fg">From challenge to payout</h2>
+            <p className="mt-2 text-body text-muted">
               The entire pot goes to the winner and settlement is automatic. Here&apos;s the whole flow.
             </p>
           </div>
@@ -91,9 +137,9 @@ export default function HomePage() {
           <ol className="mt-10 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3">
             {STEPS.map((s) => (
               <li key={s.n} className="bg-surface p-6">
-                <span className="font-mono text-sm font-medium text-rival tabular">{s.n}</span>
-                <h3 className="mt-3 font-display text-lg font-semibold text-fg">{s.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted">{s.body}</p>
+                <span className="font-display text-sm font-semibold text-rival tabular">{s.n}</span>
+                <h3 className="mt-3 text-heading-3 text-fg">{s.title}</h3>
+                <p className="mt-1.5 text-body-sm leading-relaxed text-muted">{s.body}</p>
               </li>
             ))}
           </ol>
@@ -119,7 +165,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Final CTA ────────────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-8 shadow-card sm:p-12">
           <div
             className="pointer-events-none absolute inset-0 opacity-80"
@@ -131,10 +177,8 @@ export default function HomePage() {
           />
           <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
-                Find a rival worth beating.
-              </h2>
-              <p className="mt-2 max-w-md text-sm text-muted sm:text-base">
+              <h2 className="font-display text-heading-1 text-fg">Find a rival worth beating.</h2>
+              <p className="mt-2 max-w-md text-body text-muted">
                 Browse open challenges and accept one in seconds, or set your own terms and wait for a
                 rival.
               </p>
@@ -149,15 +193,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-    </div>
-  );
-}
-
-function Metric({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <dt className="font-display text-lg font-semibold text-fg">{value}</dt>
-      <dd className="mt-0.5 text-xs leading-snug text-faint">{label}</dd>
     </div>
   );
 }
@@ -177,91 +212,7 @@ function Assurance({
         <Icon className="h-5 w-5" aria-hidden />
       </span>
       <h3 className="mt-3 text-sm font-semibold text-fg">{title}</h3>
-      <p className="mt-1 text-sm leading-relaxed text-muted">{body}</p>
-    </div>
-  );
-}
-
-/**
- * The hero's thesis: two rivals stake equally, the pot locks in escrow, and the
- * winner takes it. Static, token-driven, and legible at every breakpoint.
- */
-function EscrowVisual() {
-  return (
-    <div className="relative mx-auto w-full max-w-md">
-      <div
-        className="pointer-events-none absolute -inset-6 -z-10 opacity-70"
-        style={{
-          background:
-            "radial-gradient(24rem 18rem at 50% 30%, hsl(var(--rival) / 0.14), transparent 70%)",
-        }}
-        aria-hidden
-      />
-      <div className="rounded-2xl border border-border bg-surface/80 p-5 shadow-card backdrop-blur-sm sm:p-6">
-        <div className="flex items-center justify-between text-xs text-faint">
-          <span className="inline-flex items-center gap-1.5">
-            <Swords className="h-3.5 w-3.5 text-rival" aria-hidden />
-            Live duel
-          </span>
-          <span className="font-mono tabular">#A4F2</span>
-        </div>
-
-        {/* the two rivals */}
-        <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          <Stake name="You" tone="cr" />
-          <span className="font-display text-sm font-semibold text-faint">VS</span>
-          <Stake name="Rival" tone="bs" align="right" />
-        </div>
-
-        {/* the escrowed pot */}
-        <div className="mt-4 rounded-xl border border-rival/30 bg-rival/[0.07] p-4 text-center">
-          <p className="text-[11px] uppercase tracking-wide text-faint">Locked in escrow</p>
-          <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-fg tabular">
-            <span className="mr-1 opacity-60" aria-hidden>
-              ◎
-            </span>
-            1.00
-          </p>
-        </div>
-
-        {/* the payout */}
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-victory/30 bg-victory/[0.07] px-4 py-3">
-          <span className="inline-flex items-center gap-2 text-sm text-muted">
-            <BadgeCheck className="h-4 w-4 text-victory" aria-hidden />
-            Winner takes
-          </span>
-          <span className="font-mono text-sm font-semibold text-victory tabular">◎ 0.98</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Stake({
-  name,
-  tone,
-  align = "left",
-}: {
-  name: string;
-  tone: "cr" | "bs";
-  align?: "left" | "right";
-}) {
-  const ring = tone === "cr" ? "ring-cr/40" : "ring-bs/40";
-  return (
-    <div className={cn("flex items-center gap-2.5", align === "right" && "flex-row-reverse text-right")}>
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold uppercase text-fg ring-1",
-          ring,
-        )}
-        aria-hidden
-      >
-        {name.slice(0, 2)}
-      </span>
-      <div className={cn("min-w-0", align === "right" && "items-end")}>
-        <p className="truncate text-sm font-medium text-fg">{name}</p>
-        <p className="font-mono text-xs text-faint tabular">◎ 0.50</p>
-      </div>
+      <p className="mt-1 text-body-sm leading-relaxed text-muted">{body}</p>
     </div>
   );
 }
