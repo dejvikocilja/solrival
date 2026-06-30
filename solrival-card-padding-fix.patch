@@ -1,0 +1,44 @@
+diff --git a/apps/web/src/components/duel/create-duel-form.tsx b/apps/web/src/components/duel/create-duel-form.tsx
+index 697afaf..3f79024 100644
+--- a/apps/web/src/components/duel/create-duel-form.tsx
++++ b/apps/web/src/components/duel/create-duel-form.tsx
+@@ -157,7 +157,7 @@ export function CreateDuelForm() {
+   return (
+     <form onSubmit={onSubmit} noValidate>
+       <Card>
+-        <CardContent className="space-y-6 pt-5">
++        <CardContent className="space-y-6">
+           {/* Game */}
+           <Field label="Game">
+             <Segmented
+diff --git a/apps/web/src/components/duel/create-duel-success.tsx b/apps/web/src/components/duel/create-duel-success.tsx
+index d0aea7b..2a1704c 100644
+--- a/apps/web/src/components/duel/create-duel-success.tsx
++++ b/apps/web/src/components/duel/create-duel-success.tsx
+@@ -61,7 +61,7 @@ export function CreateDuelSuccess({
+         </div>
+       </div>
+ 
+-      <CardContent className="space-y-5 pt-5">
++      <CardContent className="space-y-5">
+         <div className="flex flex-wrap items-center gap-2">
+           <Badge tone={game.badgeTone}>{game.label}</Badge>
+           <Badge tone="neutral">{RULE_META[ruleTemplate]?.label ?? "Custom rule"}</Badge>
+diff --git a/apps/web/src/components/ui/card.tsx b/apps/web/src/components/ui/card.tsx
+index 1d5c343..d1daad3 100644
+--- a/apps/web/src/components/ui/card.tsx
++++ b/apps/web/src/components/ui/card.tsx
+@@ -14,11 +14,11 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
+ }
+ 
+ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+-  return <div className={cn("p-4 sm:p-5", className)} {...props} />;
++  return <div className={cn("p-4 pb-0 sm:p-5 sm:pb-0", className)} {...props} />;
+ }
+ 
+ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+-  return <div className={cn("p-4 pt-0 sm:p-5 sm:pt-0", className)} {...props} />;
++  return <div className={cn("p-4 sm:p-5", className)} {...props} />;
+ }
+ 
+ export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

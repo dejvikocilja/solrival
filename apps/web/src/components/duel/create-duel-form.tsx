@@ -157,7 +157,7 @@ export function CreateDuelForm() {
   return (
     <form onSubmit={onSubmit} noValidate>
       <Card>
-        <CardContent className="space-y-6 pt-5">
+        <CardContent className="space-y-6">
           {/* Game */}
           <Field label="Game">
             <Segmented

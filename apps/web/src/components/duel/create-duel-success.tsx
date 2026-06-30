@@ -61,7 +61,7 @@ export function CreateDuelSuccess({
         </div>
       </div>
 
-      <CardContent className="space-y-5 pt-5">
+      <CardContent className="space-y-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={game.badgeTone}>{game.label}</Badge>
           <Badge tone="neutral">{RULE_META[ruleTemplate]?.label ?? "Custom rule"}</Badge>
