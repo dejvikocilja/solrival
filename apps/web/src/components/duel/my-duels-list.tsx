@@ -67,7 +67,7 @@ export function MyDuelsList({ duels }: { duels: MyDuel[]; currentUserId: string 
               type="button"
               onClick={() => setTab(t.key)}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:focus-ring",
+                "rounded-md border px-3 py-1.5 text-caption font-medium transition-colors focus-visible:focus-ring",
                 active
                   ? "border-rival/60 bg-rival/10 text-fg"
                   : "border-border bg-surface-2 text-muted hover:border-border-strong hover:text-fg",
@@ -113,17 +113,17 @@ function MyDuelRow({ duel }: { duel: MyDuel }) {
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={game.badgeTone}>{game.label}</Badge>
               <Badge tone={status.tone}>{status.label}</Badge>
-              <span className="text-[11px] uppercase tracking-wide text-faint">
+              <span className="text-overline uppercase text-faint">
                 {duel.role === "creator" ? "You hosted" : "You joined"}
               </span>
             </div>
-            <span className="shrink-0 font-mono text-xs text-faint tabular">#{duel.shortCode}</span>
+            <span className="shrink-0 font-mono text-caption text-faint tabular">#{duel.shortCode}</span>
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-fg">{duel.rule?.displayName ?? "Custom rules"}</p>
-              <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted">
+              <p className="truncate text-body font-medium text-fg">{duel.rule?.displayName ?? "Custom rules"}</p>
+              <p className="mt-0.5 flex items-center gap-1.5 truncate text-caption text-muted">
                 <Swords className="h-3.5 w-3.5 shrink-0 text-faint" aria-hidden />
                 {rival ? (
                   <>vs <span className="font-medium text-fg">{rival.username}</span></>
@@ -137,7 +137,7 @@ function MyDuelRow({ duel }: { duel: MyDuel }) {
 
           {isOpen ? <ExpiryMeter expiresAt={duel.expiresAt} className="mt-3" /> : null}
 
-          <div className="mt-3 flex items-center justify-between text-xs text-faint">
+          <div className="mt-3 flex items-center justify-between text-caption text-faint">
             <span className="tabular">
               Stake <SolAmount lamports={duel.stakeLamports} className="text-muted" />
             </span>
@@ -157,7 +157,7 @@ function Outcome({ duel }: { duel: MyDuel }) {
       <div className="text-right">
         <div
           className={cn(
-            "text-[11px] font-medium uppercase tracking-wide",
+            "text-overline uppercase",
             duel.youWon ? "text-victory" : "text-danger",
           )}
         >
@@ -165,7 +165,7 @@ function Outcome({ duel }: { duel: MyDuel }) {
         </div>
         <SolAmount
           lamports={duel.youWon ? duel.rewardLamports : duel.stakeLamports}
-          className={cn("text-sm font-semibold", duel.youWon ? "text-victory" : "text-danger")}
+          className={cn("text-body font-semibold", duel.youWon ? "text-victory" : "text-danger")}
         />
       </div>
     );
@@ -173,15 +173,15 @@ function Outcome({ duel }: { duel: MyDuel }) {
   if (duel.status === "REFUNDED" || duel.status === "CANCELLED") {
     return (
       <div className="text-right">
-        <div className="text-[11px] uppercase tracking-wide text-faint">Refunded</div>
-        <SolAmount lamports={duel.stakeLamports} className="text-sm font-medium text-muted" />
+        <div className="text-overline uppercase text-faint">Refunded</div>
+        <SolAmount lamports={duel.stakeLamports} className="text-body font-medium text-muted" />
       </div>
     );
   }
   return (
     <div className="text-right">
-      <div className="text-[11px] uppercase tracking-wide text-faint">Winner takes</div>
-      <SolAmount lamports={duel.rewardLamports} className="text-sm font-semibold text-victory" />
+      <div className="text-overline uppercase text-faint">Winner takes</div>
+      <SolAmount lamports={duel.rewardLamports} className="text-body font-semibold text-victory" />
     </div>
   );
 }
@@ -200,8 +200,8 @@ function EmptyState({ tab }: { tab: TabKey }) {
       <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-muted">
         <Trophy className="h-5 w-5" aria-hidden />
       </span>
-      <p className="mt-3 text-sm text-muted">{msg}</p>
-      <Link href="/marketplace" className="mt-1 inline-block text-sm text-rival hover:underline">
+      <p className="mt-3 text-body text-muted">{msg}</p>
+      <Link href="/marketplace" className="mt-1 inline-block text-body text-rival hover:underline">
         Browse open duels
       </Link>
     </div>
