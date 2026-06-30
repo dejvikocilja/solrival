@@ -21,6 +21,12 @@ export function SiteHeader() {
             Marketplace
           </Link>
           <Link
+            href="/leaderboard"
+            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:inline-flex")}
+          >
+            Leaderboard
+          </Link>
+          <Link
             href="/duels/create"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:inline-flex")}
           >
