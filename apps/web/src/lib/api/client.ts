@@ -51,3 +51,11 @@ export function apiPost<T>(url: string, body?: unknown): Promise<T> {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
+
+export function apiPatch<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}

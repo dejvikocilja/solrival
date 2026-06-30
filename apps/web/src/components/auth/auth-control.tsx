@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { toast } from "sonner";
-import { ChevronDown, Copy, LogOut, Swords, User, Wallet as WalletIcon, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, LogOut, Settings, Swords, User, Wallet as WalletIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BalancePill } from "@/components/credits/balance-pill";
 import { NotificationsMenu } from "@/components/notifications/notifications-menu";
@@ -176,6 +176,15 @@ function AccountMenu({
               >
                 <WalletIcon className="h-4 w-4" aria-hidden />
                 Wallet &amp; balance
+              </Link>
+              <Link
+                href="/settings"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+              >
+                <Settings className="h-4 w-4" aria-hidden />
+                Settings
               </Link>
               <button
                 type="button"

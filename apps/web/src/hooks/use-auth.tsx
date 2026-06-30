@@ -23,6 +23,8 @@ export interface AuthContextValue {
   connected: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  /** Re-fetch the current session (e.g. after changing username) so the whole app re-renders with fresh user data. */
+  refresh: () => Promise<void>;
 }
 
 async function postJson<T>(url: string, body?: unknown): Promise<T> {
@@ -49,21 +51,21 @@ function useAuthState(): AuthContextValue {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [error, setError] = useState<string | null>(null);
 
-  // hydrate current session on mount
-  useEffect(() => {
-    let active = true;
-    fetch("/api/auth/session", { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d: { user: SessionUser | null }) => {
-        if (!active) return;
-        setUser(d.user);
-        setStatus(d.user ? "authenticated" : "unauthenticated");
-      })
-      .catch(() => active && setStatus("unauthenticated"));
-    return () => {
-      active = false;
-    };
+  // hydrate current session on mount (and on demand via refresh())
+  const refresh = useCallback(async () => {
+    try {
+      const r = await fetch("/api/auth/session", { credentials: "same-origin" });
+      const d = (await r.json()) as { user: SessionUser | null };
+      setUser(d.user);
+      setStatus(d.user ? "authenticated" : "unauthenticated");
+    } catch {
+      setStatus("unauthenticated");
+    }
   }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const signIn = useCallback(async () => {
     setError(null);
@@ -119,7 +121,7 @@ function useAuthState(): AuthContextValue {
     queryClient.removeQueries({ queryKey: ["credits"] });
   }, [disconnect, queryClient]);
 
-  return { user, status, error, connected, signIn, signOut };
+  return { user, status, error, connected, signIn, signOut, refresh };
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
