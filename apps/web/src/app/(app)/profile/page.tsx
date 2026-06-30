@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, Swords, Wallet as WalletIcon } from "lucide-react";
+import { Swords } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { getMyDuels } from "@/server/services/duel/my-duels";
 import { PageContainer, Section } from "@/components/ui/page-shell";
@@ -151,39 +151,6 @@ export default async function ProfilePage() {
           </div>
         </Section>
       </div>
-
-      {/* account */}
-      <div className="mt-5">
-        <Section title="Account">
-          <Card>
-            <CardContent className="p-2">
-              <AccountLink href="/duels" icon={Swords} label="My duels" />
-              <AccountLink href="/wallet" icon={WalletIcon} label="Wallet & balance" />
-            </CardContent>
-          </Card>
-        </Section>
-      </div>
     </PageContainer>
-  );
-}
-
-function AccountLink({
-  href,
-  icon: Icon,
-  label,
-}: {
-  href: string;
-  icon: typeof Swords;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 rounded-lg px-3 py-3 text-body transition-colors hover:bg-surface-2 focus-visible:focus-ring"
-    >
-      <Icon className="h-4 w-4 text-muted" aria-hidden />
-      <span className="text-fg">{label}</span>
-      <ChevronRight className="ml-auto h-4 w-4 text-faint" aria-hidden />
-    </Link>
   );
 }
