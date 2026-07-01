@@ -8,9 +8,12 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Bell } from 'lucide-react'
 import { NotificationItem } from './NotificationItem'
 import type { Notification } from '@/hooks/useNotifications'
+
+const DROPDOWN_VISIBLE_COUNT = 8
 
 interface NotificationBellProps {
   notifications: Notification[]
@@ -92,11 +95,21 @@ export function NotificationBell({
                 You&apos;re all caught up.
               </p>
             ) : (
-              notifications.map((n) => (
-                <NotificationItem key={n.id} notification={n} onRead={onMarkRead} />
-              ))
+              notifications
+                .slice(0, DROPDOWN_VISIBLE_COUNT)
+                .map((n) => (
+                  <NotificationItem key={n.id} notification={n} onRead={onMarkRead} />
+                ))
             )}
           </div>
+
+          <Link
+            href="/notifications"
+            onClick={() => setOpen(false)}
+            className="block border-t border-border px-4 py-2.5 text-center text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+          >
+            View all notifications
+          </Link>
         </div>
       )}
     </div>

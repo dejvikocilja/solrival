@@ -9,14 +9,7 @@
 
 import Link from 'next/link'
 import type { Notification } from '@/hooks/useNotifications'
-import type { RealtimeEventKind } from '@/lib/realtime/types'
-
-function dotColour(kind: RealtimeEventKind): string {
-  if (kind.startsWith('duel.')) return 'bg-rival'
-  if (kind.startsWith('verification.')) return 'bg-cr'
-  if (kind === 'reward.paid') return 'bg-victory'
-  return 'bg-ember'
-}
+import { notificationAccent } from '@/lib/notifications/meta'
 
 function timeAgo(date: Date): string {
   const diffSec = Math.floor((Date.now() - date.getTime()) / 1_000)
@@ -50,7 +43,7 @@ export function NotificationItem({ notification, onRead }: NotificationItemProps
         if (e.key === 'Enter' || e.key === ' ') handleClick()
       }}
     >
-      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColour(kind)}`} aria-hidden />
+      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notificationAccent(kind).dotClass}`} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className={`truncate text-sm font-medium leading-snug ${read ? 'text-muted' : 'text-fg'}`}>
           {title}

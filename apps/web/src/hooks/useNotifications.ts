@@ -175,7 +175,10 @@ const TOAST_DISMISS_MS = 5_000
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useNotifications(playerTag: string | null): {
+export function useNotifications(
+  playerTag: string | null,
+  enabled: boolean = true,
+): {
   notifications: Notification[]
   unreadCount: number
   markAllRead: () => void
@@ -183,6 +186,8 @@ export function useNotifications(playerTag: string | null): {
   dismiss: (id: string) => void
   toasts: Notification[]
   cappedAt50: boolean
+  connected: boolean
+  connectionError: string | null
 } {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [toastIds, setToastIds] = useState<string[]>([])
@@ -231,7 +236,7 @@ export function useNotifications(playerTag: string | null): {
     [playerTag, scheduleToastDismiss],
   )
 
-  useRealtimeEvents({ playerTag, onEvent: handleEvent })
+  const { connected, error: connectionError } = useRealtimeEvents({ playerTag, onEvent: handleEvent, enabled })
 
   const markRead = useCallback((id: string) => {
     setNotifications((prev) =>
@@ -263,5 +268,15 @@ export function useNotifications(playerTag: string | null): {
   // UI can surface a "oldest notifications dropped" indicator if desired.
   const cappedAt50 = notifications.length >= MAX_NOTIFICATIONS
 
-  return { notifications, unreadCount, markAllRead, markRead, dismiss, toasts, cappedAt50 }
+  return {
+    notifications,
+    unreadCount,
+    markAllRead,
+    markRead,
+    dismiss,
+    toasts,
+    cappedAt50,
+    connected,
+    connectionError,
+  }
 }

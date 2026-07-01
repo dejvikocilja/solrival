@@ -26,6 +26,12 @@ export interface UseRealtimeEventsOptions {
   playerTag: string | null
   onEvent?: (event: RealtimeEvent) => void
   filter?: RealtimeEventKind[]
+  /**
+   * Set to `false` to skip connecting entirely (e.g. signed-out visitors —
+   * the endpoint requires a session and would otherwise 401 and burn through
+   * the reconnect backoff forever). Defaults to `true`.
+   */
+  enabled?: boolean
 }
 
 export interface UseRealtimeEventsResult {
@@ -40,6 +46,7 @@ export function useRealtimeEvents({
   playerTag,
   onEvent,
   filter,
+  enabled = true,
 }: UseRealtimeEventsOptions): UseRealtimeEventsResult {
   const [connected, setConnected] = useState(false)
   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
@@ -124,6 +131,11 @@ export function useRealtimeEvents({
   }, []) // no deps — uses refs for everything mutable
 
   useEffect(() => {
+    if (!enabled) {
+      setConnected(false)
+      return
+    }
+
     mountedRef.current = true
     connect()
 
@@ -140,7 +152,7 @@ export function useRealtimeEvents({
         esRef.current = null
       }
     }
-  }, [connect])
+  }, [connect, enabled])
 
   return { connected, lastEvent, error }
 }

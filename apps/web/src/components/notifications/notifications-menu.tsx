@@ -1,17 +1,18 @@
 "use client";
 
-import { useNotifications } from "@/hooks/useNotifications";
+import { useNotificationsContext } from "@/hooks/use-notifications-context";
 import { NotificationBell } from "./NotificationBell";
 import { NotificationToastContainer } from "./NotificationToastContainer";
 
 /**
  * Live notifications for an authenticated player: the header bell + the
- * transient toast stack, both fed by the realtime event stream. Mount this only
- * when signed in — the SSE endpoint requires a session.
+ * transient toast stack, both fed by the shared realtime event stream (see
+ * NotificationsProvider). Mount this only when signed in — the SSE endpoint
+ * requires a session.
  */
 export function NotificationsMenu() {
   const { notifications, unreadCount, markAllRead, markRead, dismiss, toasts } =
-    useNotifications(null);
+    useNotificationsContext();
 
   return (
     <>

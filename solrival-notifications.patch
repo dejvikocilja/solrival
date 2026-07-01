@@ -1,0 +1,568 @@
+diff --git a/apps/web/src/app/notifications/page.tsx b/apps/web/src/app/notifications/page.tsx
+new file mode 100644
+index 0000000..b405809
+--- /dev/null
++++ b/apps/web/src/app/notifications/page.tsx
+@@ -0,0 +1,155 @@
++"use client";
++
++import * as React from "react";
++import Link from "next/link";
++import { Bell, CheckCheck, WifiOff } from "lucide-react";
++import { PageContainer, PageHeader } from "@/components/ui/page-shell";
++import { EmptyState } from "@/components/ui/empty-state";
++import { Button, buttonVariants } from "@/components/ui/button";
++import { Segmented } from "@/components/ui/segmented";
++import { NotificationRow } from "@/components/notifications/NotificationRow";
++import { useAuth } from "@/hooks/use-auth";
++import { useNotificationsContext } from "@/hooks/use-notifications-context";
++import type { Notification } from "@/hooks/useNotifications";
++import { cn } from "@/lib/utils";
++
++type FilterValue = "all" | "unread";
++
++const FILTER_OPTIONS = [
++  { value: "all", label: "All" },
++  { value: "unread", label: "Unread" },
++] as const;
++
++/** Buckets notifications into Today / Yesterday / Earlier, newest first within each. */
++function groupByDay(notifications: Notification[]): Array<{ label: string; items: Notification[] }> {
++  const now = new Date();
++  const today = now.toDateString();
++  const yesterday = new Date(now.getTime() - 86_400_000).toDateString();
++
++  const buckets: Record<string, Notification[]> = { Today: [], Yesterday: [], Earlier: [] };
++
++  for (const n of notifications) {
++    const day = n.receivedAt.toDateString();
++    if (day === today) buckets.Today.push(n);
++    else if (day === yesterday) buckets.Yesterday.push(n);
++    else buckets.Earlier.push(n);
++  }
++
++  return (["Today", "Yesterday", "Earlier"] as const)
++    .map((label) => ({ label, items: buckets[label] }))
++    .filter((group) => group.items.length > 0);
++}
++
++export default function NotificationsPage() {
++  const { status } = useAuth();
++  const {
++    notifications,
++    unreadCount,
++    markAllRead,
++    markRead,
++    dismiss,
++    cappedAt50,
++    connected,
++    connectionError,
++  } = useNotificationsContext();
++  const [filter, setFilter] = React.useState<FilterValue>("all");
++
++  const visible = filter === "unread" ? notifications.filter((n) => !n.read) : notifications;
++  const groups = groupByDay(visible);
++
++  return (
++    <PageContainer>
++      <PageHeader
++        eyebrow="Activity"
++        title="Notifications"
++        description="Duel results, verification updates, and payouts, as they happen."
++        actions={
++          unreadCount > 0 ? (
++            <Button variant="secondary" size="sm" onClick={markAllRead}>
++              <CheckCheck className="h-4 w-4" aria-hidden />
++              Mark all read
++            </Button>
++          ) : undefined
++        }
++      />
++
++      {status === "loading" ? (
++        <div className="h-48 w-full animate-pulse rounded-xl bg-surface-2" />
++      ) : status !== "authenticated" ? (
++        <EmptyState
++          icon={Bell}
++          title="Sign in to see your notifications"
++          description="Connect your wallet and sign in (top right) to follow your duels in real time."
++          action={
++            <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
++              Browse open duels
++            </Link>
++          }
++        />
++      ) : (
++        <div className="space-y-5">
++          {!connected && connectionError ? (
++            <div className="flex items-center gap-2.5 rounded-md border border-ember/30 bg-ember/10 px-3.5 py-2.5 text-body-sm text-ember">
++              <WifiOff className="h-4 w-4 shrink-0" aria-hidden />
++              {connectionError}
++            </div>
++          ) : null}
++
++          <div className="flex items-center justify-between gap-3">
++            <div className="w-48">
++              <Segmented
++                aria-label="Filter notifications"
++                value={filter}
++                onValueChange={(v) => setFilter(v as FilterValue)}
++                options={[...FILTER_OPTIONS]}
++              />
++            </div>
++            {unreadCount > 0 ? (
++              <span className="shrink-0 text-caption text-faint">
++                {unreadCount} unread
++              </span>
++            ) : null}
++          </div>
++
++          {visible.length === 0 ? (
++            <EmptyState
++              icon={Bell}
++              title={filter === "unread" ? "You're all caught up" : "No notifications yet"}
++              description={
++                filter === "unread"
++                  ? "New activity will show up here as it happens."
++                  : "Accept or create a duel to start seeing live updates on results, verification, and payouts."
++              }
++              action={
++                filter === "all" ? (
++                  <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
++                    Browse open duels
++                  </Link>
++                ) : undefined
++              }
++            />
++          ) : (
++            <div className="space-y-6">
++              {groups.map((group) => (
++                <div key={group.label} className="space-y-2">
++                  <h2 className="px-1 text-overline uppercase text-faint">{group.label}</h2>
++                  <div className="space-y-1.5">
++                    {group.items.map((n) => (
++                      <NotificationRow key={n.id} notification={n} onRead={markRead} onDismiss={dismiss} />
++                    ))}
++                  </div>
++                </div>
++              ))}
++            </div>
++          )}
++
++          {cappedAt50 ? (
++            <p className="text-center text-caption text-faint">
++              Showing your most recent 50 notifications from this session.
++            </p>
++          ) : null}
++        </div>
++      )}
++    </PageContainer>
++  );
++}
+diff --git a/apps/web/src/components/notifications/NotificationBell.tsx b/apps/web/src/components/notifications/NotificationBell.tsx
+index be7da75..a82444c 100644
+--- a/apps/web/src/components/notifications/NotificationBell.tsx
++++ b/apps/web/src/components/notifications/NotificationBell.tsx
+@@ -8,10 +8,13 @@
+  */
+ 
+ import { useEffect, useRef, useState } from 'react'
++import Link from 'next/link'
+ import { Bell } from 'lucide-react'
+ import { NotificationItem } from './NotificationItem'
+ import type { Notification } from '@/hooks/useNotifications'
+ 
++const DROPDOWN_VISIBLE_COUNT = 8
++
+ interface NotificationBellProps {
+   notifications: Notification[]
+   unreadCount: number
+@@ -92,11 +95,21 @@ export function NotificationBell({
+                 You&apos;re all caught up.
+               </p>
+             ) : (
+-              notifications.map((n) => (
+-                <NotificationItem key={n.id} notification={n} onRead={onMarkRead} />
+-              ))
++              notifications
++                .slice(0, DROPDOWN_VISIBLE_COUNT)
++                .map((n) => (
++                  <NotificationItem key={n.id} notification={n} onRead={onMarkRead} />
++                ))
+             )}
+           </div>
++
++          <Link
++            href="/notifications"
++            onClick={() => setOpen(false)}
++            className="block border-t border-border px-4 py-2.5 text-center text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
++          >
++            View all notifications
++          </Link>
+         </div>
+       )}
+     </div>
+diff --git a/apps/web/src/components/notifications/NotificationItem.tsx b/apps/web/src/components/notifications/NotificationItem.tsx
+index 840c0fc..0fae60f 100644
+--- a/apps/web/src/components/notifications/NotificationItem.tsx
++++ b/apps/web/src/components/notifications/NotificationItem.tsx
+@@ -9,14 +9,7 @@
+ 
+ import Link from 'next/link'
+ import type { Notification } from '@/hooks/useNotifications'
+-import type { RealtimeEventKind } from '@/lib/realtime/types'
+-
+-function dotColour(kind: RealtimeEventKind): string {
+-  if (kind.startsWith('duel.')) return 'bg-rival'
+-  if (kind.startsWith('verification.')) return 'bg-cr'
+-  if (kind === 'reward.paid') return 'bg-victory'
+-  return 'bg-ember'
+-}
++import { notificationAccent } from '@/lib/notifications/meta'
+ 
+ function timeAgo(date: Date): string {
+   const diffSec = Math.floor((Date.now() - date.getTime()) / 1_000)
+@@ -50,7 +43,7 @@ export function NotificationItem({ notification, onRead }: NotificationItemProps
+         if (e.key === 'Enter' || e.key === ' ') handleClick()
+       }}
+     >
+-      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotColour(kind)}`} aria-hidden />
++      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notificationAccent(kind).dotClass}`} aria-hidden />
+       <div className="min-w-0 flex-1">
+         <p className={`truncate text-sm font-medium leading-snug ${read ? 'text-muted' : 'text-fg'}`}>
+           {title}
+diff --git a/apps/web/src/components/notifications/NotificationRow.tsx b/apps/web/src/components/notifications/NotificationRow.tsx
+new file mode 100644
+index 0000000..4bbfd54
+--- /dev/null
++++ b/apps/web/src/components/notifications/NotificationRow.tsx
+@@ -0,0 +1,97 @@
++'use client'
++
++import Link from 'next/link'
++import { X } from 'lucide-react'
++import type { Notification } from '@/hooks/useNotifications'
++import { notificationAccent } from '@/lib/notifications/meta'
++import { cn } from '@/lib/utils'
++
++function formatTimestamp(date: Date): string {
++  const now = new Date()
++  const sameDay = date.toDateString() === now.toDateString()
++  if (sameDay) {
++    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
++  }
++  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
++}
++
++export interface NotificationRowProps {
++  notification: Notification
++  onRead: (id: string) => void
++  onDismiss: (id: string) => void
++}
++
++export function NotificationRow({ notification, onRead, onDismiss }: NotificationRowProps) {
++  const { id, kind, title, description, actionLabel, actionHref, read, receivedAt } = notification
++  const { icon: Icon, chipClass } = notificationAccent(kind)
++
++  const handleOpen = () => {
++    if (!read) onRead(id)
++  }
++
++  const body = (
++    <div
++      className={cn(
++        'group flex items-start gap-3.5 rounded-lg border px-4 py-3.5 transition-colors',
++        read ? 'border-border bg-transparent' : 'border-border bg-surface-2/50',
++        actionHref && 'cursor-pointer hover:border-border-strong hover:bg-surface-2',
++      )}
++      onClick={actionHref ? handleOpen : undefined}
++      role={actionHref ? 'button' : undefined}
++      tabIndex={actionHref ? 0 : undefined}
++      onKeyDown={
++        actionHref
++          ? (e) => {
++              if (e.key === 'Enter' || e.key === ' ') handleOpen()
++            }
++          : undefined
++      }
++    >
++      <span
++        className={cn('mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full', chipClass)}
++        aria-hidden
++      >
++        <Icon className="h-4 w-4" aria-hidden />
++      </span>
++
++      <div className="min-w-0 flex-1">
++        <div className="flex items-start justify-between gap-3">
++          <p className={cn('text-body-sm font-medium leading-snug', read ? 'text-muted' : 'text-fg')}>
++            {title}
++          </p>
++          <span className="shrink-0 whitespace-nowrap pt-0.5 text-caption text-faint">
++            {formatTimestamp(receivedAt)}
++          </span>
++        </div>
++        <p className="mt-0.5 text-body-sm text-muted">{description}</p>
++        {actionLabel && actionHref ? (
++          <span className="mt-1.5 inline-block text-caption font-medium text-rival">{actionLabel} →</span>
++        ) : null}
++      </div>
++
++      {!read ? <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-rival" aria-hidden /> : null}
++
++      <button
++        type="button"
++        aria-label="Dismiss notification"
++        onClick={(e) => {
++          e.stopPropagation()
++          e.preventDefault()
++          onDismiss(id)
++        }}
++        className="shrink-0 rounded-md p-1 text-faint opacity-0 transition-opacity hover:bg-surface hover:text-fg focus-visible:opacity-100 focus-visible:focus-ring group-hover:opacity-100"
++      >
++        <X className="h-3.5 w-3.5" aria-hidden />
++      </button>
++    </div>
++  )
++
++  if (actionHref) {
++    return (
++      <Link href={actionHref} className="block focus-visible:focus-ring" onClick={handleOpen}>
++        {body}
++      </Link>
++    )
++  }
++  return body
++}
+diff --git a/apps/web/src/components/notifications/notifications-menu.tsx b/apps/web/src/components/notifications/notifications-menu.tsx
+index f984ef1..a9ac1b8 100644
+--- a/apps/web/src/components/notifications/notifications-menu.tsx
++++ b/apps/web/src/components/notifications/notifications-menu.tsx
+@@ -1,17 +1,18 @@
+ "use client";
+ 
+-import { useNotifications } from "@/hooks/useNotifications";
++import { useNotificationsContext } from "@/hooks/use-notifications-context";
+ import { NotificationBell } from "./NotificationBell";
+ import { NotificationToastContainer } from "./NotificationToastContainer";
+ 
+ /**
+  * Live notifications for an authenticated player: the header bell + the
+- * transient toast stack, both fed by the realtime event stream. Mount this only
+- * when signed in — the SSE endpoint requires a session.
++ * transient toast stack, both fed by the shared realtime event stream (see
++ * NotificationsProvider). Mount this only when signed in — the SSE endpoint
++ * requires a session.
+  */
+ export function NotificationsMenu() {
+   const { notifications, unreadCount, markAllRead, markRead, dismiss, toasts } =
+-    useNotifications(null);
++    useNotificationsContext();
+ 
+   return (
+     <>
+diff --git a/apps/web/src/components/providers/app-providers.tsx b/apps/web/src/components/providers/app-providers.tsx
+index a4b447b..4b48024 100644
+--- a/apps/web/src/components/providers/app-providers.tsx
++++ b/apps/web/src/components/providers/app-providers.tsx
+@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { Toaster } from "sonner";
+ import { SolanaWalletProvider } from "@/lib/solana/wallet-provider";
+ import { AuthProvider } from "@/hooks/use-auth";
++import { NotificationsProvider } from "@/hooks/use-notifications-context";
+ import "@solana/wallet-adapter-react-ui/styles.css";
+ 
+ export function AppProviders({ children }: { children: React.ReactNode }) {
+@@ -13,7 +14,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
+   return (
+     <QueryClientProvider client={queryClient}>
+       <SolanaWalletProvider>
+-        <AuthProvider>{children}</AuthProvider>
++        <AuthProvider>
++          <NotificationsProvider>{children}</NotificationsProvider>
++        </AuthProvider>
+       </SolanaWalletProvider>
+       <Toaster theme="dark" position="top-center" richColors />
+     </QueryClientProvider>
+diff --git a/apps/web/src/hooks/use-notifications-context.tsx b/apps/web/src/hooks/use-notifications-context.tsx
+new file mode 100644
+index 0000000..ca5ec2d
+--- /dev/null
++++ b/apps/web/src/hooks/use-notifications-context.tsx
+@@ -0,0 +1,44 @@
++"use client";
++
++import { createContext, useContext, type ReactNode } from "react";
++import { useAuth } from "@/hooks/use-auth";
++import { useNotifications, type Notification } from "@/hooks/useNotifications";
++
++export interface NotificationsContextValue {
++  notifications: Notification[];
++  unreadCount: number;
++  markAllRead: () => void;
++  markRead: (id: string) => void;
++  dismiss: (id: string) => void;
++  toasts: Notification[];
++  cappedAt50: boolean;
++  connected: boolean;
++  connectionError: string | null;
++}
++
++const NotificationsContext = createContext<NotificationsContextValue | null>(null);
++
++/**
++ * Owns the single SSE connection + notification list for the signed-in
++ * session. Mount once near the root (inside AuthProvider) so the header bell
++ * and the /notifications page read and mutate the same state — otherwise
++ * "mark as read" in one place wouldn't reflect in the other, and we'd open a
++ * duplicate EventSource per consumer.
++ */
++export function NotificationsProvider({ children }: { children: ReactNode }) {
++  const { user, status } = useAuth();
++  const authenticated = status === "authenticated";
++  // Only stream once a session is confirmed — the endpoint 401s otherwise,
++  // and we don't want a reconnect-loop running for signed-out visitors.
++  const playerTag = authenticated ? (user?.username ?? null) : null;
++  const value = useNotifications(playerTag, authenticated);
++
++  return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
++}
++
++/** Reads the shared notification state. Must be used within {@link NotificationsProvider}. */
++export function useNotificationsContext(): NotificationsContextValue {
++  const ctx = useContext(NotificationsContext);
++  if (!ctx) throw new Error("useNotificationsContext must be used within <NotificationsProvider>");
++  return ctx;
++}
+diff --git a/apps/web/src/hooks/useNotifications.ts b/apps/web/src/hooks/useNotifications.ts
+index 389dbf7..b9ee930 100644
+--- a/apps/web/src/hooks/useNotifications.ts
++++ b/apps/web/src/hooks/useNotifications.ts
+@@ -175,7 +175,10 @@ const TOAST_DISMISS_MS = 5_000
+ 
+ // ─── Hook ─────────────────────────────────────────────────────────────────────
+ 
+-export function useNotifications(playerTag: string | null): {
++export function useNotifications(
++  playerTag: string | null,
++  enabled: boolean = true,
++): {
+   notifications: Notification[]
+   unreadCount: number
+   markAllRead: () => void
+@@ -183,6 +186,8 @@ export function useNotifications(playerTag: string | null): {
+   dismiss: (id: string) => void
+   toasts: Notification[]
+   cappedAt50: boolean
++  connected: boolean
++  connectionError: string | null
+ } {
+   const [notifications, setNotifications] = useState<Notification[]>([])
+   const [toastIds, setToastIds] = useState<string[]>([])
+@@ -231,7 +236,7 @@ export function useNotifications(playerTag: string | null): {
+     [playerTag, scheduleToastDismiss],
+   )
+ 
+-  useRealtimeEvents({ playerTag, onEvent: handleEvent })
++  const { connected, error: connectionError } = useRealtimeEvents({ playerTag, onEvent: handleEvent, enabled })
+ 
+   const markRead = useCallback((id: string) => {
+     setNotifications((prev) =>
+@@ -263,5 +268,15 @@ export function useNotifications(playerTag: string | null): {
+   // UI can surface a "oldest notifications dropped" indicator if desired.
+   const cappedAt50 = notifications.length >= MAX_NOTIFICATIONS
+ 
+-  return { notifications, unreadCount, markAllRead, markRead, dismiss, toasts, cappedAt50 }
++  return {
++    notifications,
++    unreadCount,
++    markAllRead,
++    markRead,
++    dismiss,
++    toasts,
++    cappedAt50,
++    connected,
++    connectionError,
++  }
+ }
+diff --git a/apps/web/src/hooks/useRealtimeEvents.ts b/apps/web/src/hooks/useRealtimeEvents.ts
+index 852a1b7..ce182df 100644
+--- a/apps/web/src/hooks/useRealtimeEvents.ts
++++ b/apps/web/src/hooks/useRealtimeEvents.ts
+@@ -26,6 +26,12 @@ export interface UseRealtimeEventsOptions {
+   playerTag: string | null
+   onEvent?: (event: RealtimeEvent) => void
+   filter?: RealtimeEventKind[]
++  /**
++   * Set to `false` to skip connecting entirely (e.g. signed-out visitors —
++   * the endpoint requires a session and would otherwise 401 and burn through
++   * the reconnect backoff forever). Defaults to `true`.
++   */
++  enabled?: boolean
+ }
+ 
+ export interface UseRealtimeEventsResult {
+@@ -40,6 +46,7 @@ export function useRealtimeEvents({
+   playerTag,
+   onEvent,
+   filter,
++  enabled = true,
+ }: UseRealtimeEventsOptions): UseRealtimeEventsResult {
+   const [connected, setConnected] = useState(false)
+   const [lastEvent, setLastEvent] = useState<RealtimeEvent | null>(null)
+@@ -124,6 +131,11 @@ export function useRealtimeEvents({
+   }, []) // no deps — uses refs for everything mutable
+ 
+   useEffect(() => {
++    if (!enabled) {
++      setConnected(false)
++      return
++    }
++
+     mountedRef.current = true
+     connect()
+ 
+@@ -140,7 +152,7 @@ export function useRealtimeEvents({
+         esRef.current = null
+       }
+     }
+-  }, [connect])
++  }, [connect, enabled])
+ 
+   return { connected, lastEvent, error }
+ }
+diff --git a/apps/web/src/lib/notifications/meta.ts b/apps/web/src/lib/notifications/meta.ts
+new file mode 100644
+index 0000000..6daeb44
+--- /dev/null
++++ b/apps/web/src/lib/notifications/meta.ts
+@@ -0,0 +1,29 @@
++import { Swords, ShieldCheck, Wallet, Trophy, type LucideIcon } from 'lucide-react'
++import type { RealtimeEventKind } from '@/lib/realtime/types'
++
++export interface NotificationAccent {
++  icon: LucideIcon
++  /** Small status-dot class, used in the compact dropdown row. */
++  dotClass: string
++  /** Icon-chip background + foreground, used in the full-page row. */
++  chipClass: string
++}
++
++/**
++ * One accent per event family. Duels are the primary "action" color, verification
++ * uses the CR teal (a neutral in-progress/system signal), payouts use the money
++ * green, and tournaments use ember to stand apart from 1v1 duels.
++ */
++export function notificationAccent(kind: RealtimeEventKind): NotificationAccent {
++  if (kind.startsWith('duel.')) {
++    return { icon: Swords, dotClass: 'bg-rival', chipClass: 'bg-rival/12 text-rival' }
++  }
++  if (kind.startsWith('verification.')) {
++    return { icon: ShieldCheck, dotClass: 'bg-cr', chipClass: 'bg-cr/12 text-cr' }
++  }
++  if (kind === 'reward.paid') {
++    return { icon: Wallet, dotClass: 'bg-victory', chipClass: 'bg-victory/12 text-victory' }
++  }
++  // tournament.*
++  return { icon: Trophy, dotClass: 'bg-ember', chipClass: 'bg-ember/12 text-ember' }
++}
