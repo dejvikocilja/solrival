@@ -188,8 +188,8 @@ export default function AdminVerificationPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-xl font-semibold text-fg">Verification</h1>
-          <p className="mt-0.5 text-sm text-faint">
+          <h1 className="font-display text-heading-1 text-fg">Verification</h1>
+          <p className="mt-0.5 text-body-sm text-muted">
             Live verification job monitor — polling every 10 seconds.
           </p>
         </div>
@@ -238,7 +238,7 @@ export default function AdminVerificationPage() {
               className={[
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 status === o.value
-                  ? "bg-rival text-white"
+                  ? "bg-rival text-rival-fg"
                   : "text-muted hover:text-fg",
               ].join(" ")}
             >
@@ -246,7 +246,7 @@ export default function AdminVerificationPage() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-faint">
+        <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} jobs
         </span>
       </div>

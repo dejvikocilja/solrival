@@ -167,7 +167,7 @@ const submitPayout = async () => {
               <button
                 type="button"
                 onClick={() => setPayout(r)}
-                className="rounded-lg bg-rival/90 px-3 py-1.5 text-xs font-medium text-white hover:brightness-110"
+                className="rounded-lg bg-rival/90 px-3 py-1.5 text-xs font-medium text-rival-fg hover:brightness-110"
               >
                 Pay out
               </button>
@@ -180,37 +180,35 @@ const submitPayout = async () => {
   ];
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-rival/20 text-rival">
-          <Banknote className="h-5 w-5" />
-        </span>
-        <div>
-          <h1 className="text-lg font-semibold text-fg">Withdrawals</h1>
-          <p className="text-sm text-faint">
-            Requests with an active dispute are held here for manual review. All others auto-approve.
-          </p>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-heading-1 text-fg">Withdrawals</h1>
+        <p className="mt-0.5 text-body-sm text-muted">
+          Requests with an active dispute are held here for manual review. All others auto-approve.
+        </p>
+      </div>
 
-      {/* Status tabs */}
-      <div className="flex flex-wrap gap-1.5">
-        {STATUS_TABS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setStatus(s);
-              setPage(1);
-            }}
-            className={[
-              "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-              status === s ? "bg-surface-2 text-fg" : "text-faint hover:bg-surface hover:text-fg",
-            ].join(" ")}
-          >
-            {s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}
-          </button>
-        ))}
+      {/* Status filter */}
+      <div className="flex items-center gap-3">
+        <div className="flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
+          {STATUS_TABS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setStatus(s);
+                setPage(1);
+              }}
+              className={[
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                status === s ? "bg-rival text-rival-fg" : "text-muted hover:text-fg",
+              ].join(" ")}
+            >
+              {s.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+        <span className="ml-auto text-caption text-faint">{meta.total.toLocaleString()} requests</span>
       </div>
 
       {!loading && rows.length === 0 ? (

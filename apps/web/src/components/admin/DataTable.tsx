@@ -65,7 +65,7 @@ export function DataTable<T>({
   return (
     <div className="flex flex-col gap-0">
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-border">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-border bg-surface/60">
@@ -74,7 +74,7 @@ export function DataTable<T>({
                   key={col.key}
                   scope="col"
                   className={[
-                    "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-faint",
+                    "whitespace-nowrap px-4 py-3 text-left text-overline text-faint",
                     col.sortable ? "cursor-pointer select-none hover:text-fg" : "",
                     col.width ?? "",
                   ].join(" ")}
@@ -214,7 +214,7 @@ function PaginationButton({
       className={[
         "flex h-7 min-w-[1.75rem] items-center justify-center rounded-md px-2 text-xs font-medium transition-colors disabled:opacity-30",
         active
-          ? "bg-rival text-white"
+          ? "bg-rival text-rival-fg"
           : "text-muted hover:bg-surface-2 hover:text-fg",
       ].join(" ")}
     >

@@ -43,7 +43,7 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
           className="flex items-center gap-2 focus-visible:focus-ring rounded-md"
           onClick={onClose}
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rival text-white">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rival text-rival-fg">
             <Swords className="h-4 w-4" />
           </span>
           <span className="font-display text-[15px] font-semibold tracking-tight text-fg">

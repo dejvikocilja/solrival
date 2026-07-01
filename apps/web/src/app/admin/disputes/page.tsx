@@ -164,7 +164,7 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
               type="submit"
               disabled={loading || !notes.trim()}
               aria-busy={loading}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-rival px-4 py-2.5 text-sm font-medium text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-rival px-4 py-2.5 text-sm font-medium text-rival-fg transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {loading ? (
                 <>
@@ -325,8 +325,8 @@ export default function AdminDisputesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-fg">Disputes</h1>
-        <p className="mt-0.5 text-sm text-faint">
+        <h1 className="font-display text-heading-1 text-fg">Disputes</h1>
+        <p className="mt-0.5 text-body-sm text-muted">
           Review and resolve duel disputes raised by players or the verification engine.
         </p>
       </div>
@@ -358,7 +358,7 @@ export default function AdminDisputesPage() {
               className={[
                 "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 filter === v
-                  ? "bg-rival text-white"
+                  ? "bg-rival text-rival-fg"
                   : "text-muted hover:text-fg",
               ].join(" ")}
             >
@@ -366,7 +366,7 @@ export default function AdminDisputesPage() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-faint">
+        <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} disputes
         </span>
       </div>

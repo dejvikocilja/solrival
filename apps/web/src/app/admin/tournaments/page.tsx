@@ -201,8 +201,8 @@ export default function AdminTournamentsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="font-display text-xl font-semibold text-fg">Tournaments</h1>
-        <p className="mt-0.5 text-sm text-faint">
+        <h1 className="font-display text-heading-1 text-fg">Tournaments</h1>
+        <p className="mt-0.5 text-body-sm text-muted">
           Manage tournament lifecycle — start brackets, view standings, and cancel events.
         </p>
       </div>

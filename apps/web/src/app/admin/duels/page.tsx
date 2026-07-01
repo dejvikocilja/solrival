@@ -198,8 +198,8 @@ export default function AdminDuelsPage() {
     <div className="space-y-6">
       {/* Page header */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-display text-xl font-semibold text-fg">Duels</h1>
-        <p className="text-sm text-faint">
+        <h1 className="font-display text-heading-1 text-fg">Duels</h1>
+        <p className="text-body-sm text-muted">
           Manage all platform duels, cancel disputes, and force refunds.
         </p>
       </div>
@@ -216,7 +216,7 @@ export default function AdminDuelsPage() {
           onChange={(v) => handleFilter("game", v)}
           options={GAME_OPTIONS}
         />
-        <span className="ml-auto text-xs text-faint">
+        <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} duels
         </span>
       </div>
