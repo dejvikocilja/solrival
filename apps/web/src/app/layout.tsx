@@ -3,6 +3,8 @@ import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { RootErrorBoundary } from "@/components/providers/root-error-boundary";
 import { SiteHeader } from "@/components/site-header";
+import { SkipLink } from "@/components/skip-link";
+import { MobileTabBar } from "@/components/mobile-tab-bar";
 import "./globals.css";
 
 const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -27,8 +29,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans antialiased">
         <RootErrorBoundary>
           <AppProviders>
+            <SkipLink />
             <SiteHeader />
-            {children}
+            <div id="main-content" tabIndex={-1} className="outline-none">
+              {children}
+            </div>
+            <MobileTabBar />
           </AppProviders>
         </RootErrorBoundary>
       </body>
