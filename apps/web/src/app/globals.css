@@ -14,7 +14,9 @@
   /* Text */
   --fg: 225 20% 96%;
   --muted: 225 9% 67%;
-  --faint: 225 7% 44%;
+  /* Lifted from 44% → 55% so faint text (timestamps, captions, hints) clears
+     WCAG AA 4.5:1 on every surface, while staying the dimmest text tier. */
+  --faint: 225 8% 55%;
 
   /* Functional accents — purple acts, green is money */
   --rival: 258 90% 66%;

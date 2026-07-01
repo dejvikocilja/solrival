@@ -22,7 +22,7 @@ export function BalancePill({ className }: { className?: string }) {
       href="/wallet"
       aria-label="Open wallet"
       className={cn(
-        "group inline-flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 h-8",
+        "group inline-flex items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 h-9",
         "text-sm transition-colors hover:border-border-strong focus-visible:focus-ring",
         className,
       )}

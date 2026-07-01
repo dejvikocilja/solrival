@@ -25,28 +25,8 @@ export function NotificationRow({ notification, onRead, onDismiss }: Notificatio
   const { id, kind, title, description, actionLabel, actionHref, read, receivedAt } = notification
   const { icon: Icon, chipClass } = notificationAccent(kind)
 
-  const handleOpen = () => {
-    if (!read) onRead(id)
-  }
-
-  const body = (
-    <div
-      className={cn(
-        'group flex items-start gap-3.5 rounded-lg border px-4 py-3.5 transition-colors',
-        read ? 'border-border bg-transparent' : 'border-border bg-surface-2/50',
-        actionHref && 'cursor-pointer hover:border-border-strong hover:bg-surface-2',
-      )}
-      onClick={actionHref ? handleOpen : undefined}
-      role={actionHref ? 'button' : undefined}
-      tabIndex={actionHref ? 0 : undefined}
-      onKeyDown={
-        actionHref
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') handleOpen()
-            }
-          : undefined
-      }
-    >
+  const inner = (
+    <>
       <span
         className={cn('mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full', chipClass)}
         aria-hidden
@@ -56,9 +36,7 @@ export function NotificationRow({ notification, onRead, onDismiss }: Notificatio
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
-          <p className={cn('text-body-sm font-medium leading-snug', read ? 'text-muted' : 'text-fg')}>
-            {title}
-          </p>
+          <p className={cn('text-body-sm font-medium leading-snug', read ? 'text-muted' : 'text-fg')}>{title}</p>
           <span className="shrink-0 whitespace-nowrap pt-0.5 text-caption text-faint">
             {formatTimestamp(receivedAt)}
           </span>
@@ -70,28 +48,40 @@ export function NotificationRow({ notification, onRead, onDismiss }: Notificatio
       </div>
 
       {!read ? <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-rival" aria-hidden /> : null}
+    </>
+  )
+
+  const rowClass = cn(
+    'flex items-start gap-3.5 rounded-lg border px-4 py-3.5 transition-colors',
+    read ? 'border-border bg-transparent' : 'border-border bg-surface-2/50',
+  )
+
+  // The dismiss button is a SIBLING of the Link, never a descendant — nesting a
+  // <button> inside an <a> is invalid and mis-announced by screen readers. The
+  // wrapper is `relative` and the dismiss floats in the top-right corner with
+  // its own padding reserved (pr-11) so text never sits under it.
+  return (
+    <div className="group relative">
+      {actionHref ? (
+        <Link
+          href={actionHref}
+          onClick={() => onRead(id)}
+          className={cn(rowClass, 'cursor-pointer pr-11 hover:border-border-strong hover:bg-surface-2 focus-visible:focus-ring')}
+        >
+          {inner}
+        </Link>
+      ) : (
+        <div className={cn(rowClass, 'pr-11')}>{inner}</div>
+      )}
 
       <button
         type="button"
         aria-label="Dismiss notification"
-        onClick={(e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          onDismiss(id)
-        }}
-        className="shrink-0 rounded-md p-1 text-faint opacity-0 transition-opacity hover:bg-surface hover:text-fg focus-visible:opacity-100 focus-visible:focus-ring group-hover:opacity-100"
+        onClick={() => onDismiss(id)}
+        className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-md text-faint opacity-0 transition-opacity hover:bg-surface hover:text-fg focus-visible:opacity-100 focus-visible:focus-ring group-hover:opacity-100"
       >
-        <X className="h-3.5 w-3.5" aria-hidden />
+        <X className="h-4 w-4" aria-hidden />
       </button>
     </div>
   )
-
-  if (actionHref) {
-    return (
-      <Link href={actionHref} className="block focus-visible:focus-ring" onClick={handleOpen}>
-        {body}
-      </Link>
-    )
-  }
-  return body
 }

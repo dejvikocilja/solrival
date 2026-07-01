@@ -119,7 +119,7 @@ function AccountMenu({
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
           className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5",
+            "inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5",
             "text-sm transition-colors hover:border-border-strong focus-visible:focus-ring",
           )}
         >

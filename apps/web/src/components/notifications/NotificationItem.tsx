@@ -29,20 +29,8 @@ export interface NotificationItemProps {
 export function NotificationItem({ notification, onRead }: NotificationItemProps) {
   const { id, kind, title, description, actionHref, read, receivedAt } = notification
 
-  const handleClick = () => onRead(id)
-
-  const content = (
-    <div
-      className={`flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors hover:bg-surface-2 ${
-        read ? 'bg-transparent' : 'bg-surface-2/50'
-      }`}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') handleClick()
-      }}
-    >
+  const inner = (
+    <>
       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notificationAccent(kind).dotClass}`} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className={`truncate text-sm font-medium leading-snug ${read ? 'text-muted' : 'text-fg'}`}>
@@ -51,15 +39,28 @@ export function NotificationItem({ notification, onRead }: NotificationItemProps
         <p className="mt-0.5 truncate text-xs text-faint">{description}</p>
       </div>
       <span className="shrink-0 text-xs text-faint">{timeAgo(receivedAt)}</span>
-    </div>
+    </>
   )
 
+  const rowClass = `flex items-start gap-3 px-4 py-3 transition-colors ${
+    read ? 'bg-transparent' : 'bg-surface-2/50'
+  }`
+
+  // A single Link is the one interactive element — no nested role="button" (that
+  // announces a button inside a link to screen readers). Following the link
+  // marks the item read.
   if (actionHref) {
     return (
-      <Link href={actionHref} className="block focus-visible:focus-ring" tabIndex={-1}>
-        {content}
+      <Link
+        href={actionHref}
+        onClick={() => onRead(id)}
+        className={`${rowClass} hover:bg-surface-2 focus-visible:focus-ring`}
+      >
+        {inner}
       </Link>
     )
   }
-  return content
+
+  // No destination — render as a plain, non-interactive row.
+  return <div className={rowClass}>{inner}</div>
 }
