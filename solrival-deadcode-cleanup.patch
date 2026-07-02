@@ -1,0 +1,50 @@
+diff --git a/apps/web/src/lib/verification/dispute-handler.ts b/apps/web/src/lib/verification/dispute-handler.ts
+index 167d13a..2eee7e8 100644
+--- a/apps/web/src/lib/verification/dispute-handler.ts
++++ b/apps/web/src/lib/verification/dispute-handler.ts
+@@ -48,45 +48,3 @@ export async function openDispute(
+ 
+   return record
+ }
+-
+-/**
+- * Resolves an existing dispute.
+- *
+- * @param disputeId          - ID returned by `openDispute`
+- * @param resolvedByAdminId  - DB user ID of the admin performing the resolution
+- * @param resolution         - Free-text resolution notes
+- * @param outcome            - Terminal status to set on the dispute
+- */
+-export async function resolveDispute(
+-  disputeId: string,
+-  resolvedByAdminId: string,
+-  resolution: string,
+-  outcome: 'RESOLVED_CREATOR_WIN' | 'RESOLVED_OPPONENT_WIN' | 'RESOLVED_REFUND' | 'REJECTED',
+-) {
+-  return prisma.dispute.update({
+-    where: { id: disputeId },
+-    data: {
+-      status:              outcome,
+-      resolutionNotes:     resolution,
+-      resolvedByAdminId,
+-      resolvedAt:          new Date(),
+-    },
+-  })
+-}
+-
+-/**
+- * Returns all dispute records, ordered oldest-first.
+- */
+-export function getDisputes() {
+-  return prisma.dispute.findMany({ orderBy: { createdAt: 'asc' } })
+-}
+-
+-/**
+- * Returns only the open disputes (status OPEN or UNDER_REVIEW), oldest-first.
+- */
+-export function getOpenDisputes() {
+-  return prisma.dispute.findMany({
+-    where:   { status: { in: ['OPEN', 'UNDER_REVIEW'] } },
+-    orderBy: { createdAt: 'asc' },
+-  })
+-}
