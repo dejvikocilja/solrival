@@ -1,22 +1,17 @@
 /**
- * Public entry point for duel verification.
+ * Duel verification — single-attempt, sweep-driven.
  *
- * `verifyDuel(duelId)` is the single function callers should invoke.
- * It loads the duel's verification context, tries an immediate battle lookup,
- * and either returns a verified result or starts the background poller.
- *
- * Usage in a Next.js API route:
- * ```ts
- * import { verifyDuel } from '@/api/verification/verify'
- *
- * const result = await verifyDuel(duelId)
- * ```
+ * `verifyDuelOnce(duelId)` performs one verification attempt and settles the
+ * duel the moment a matching battle is found (or disputes it once its window
+ * expires). It is invoked repeatedly by the cron sweep
+ * (`runVerificationSweep` → POST /api/internal/duels/verify), which is the
+ * production driver: no long-lived in-process poller, so it works on
+ * serverless/short-lived runtimes and survives restarts.
  */
 
 import { prisma } from '@solrival/db'
 import type { DuelVerificationContext, VerificationResult, BattleRecord } from '@/lib/verification/types'
 import { findMatchingBattle, toGameId } from '@/lib/verification/verification-engine'
-import { startVerificationPoller } from '@/lib/verification/poller'
 import { openDispute } from '@/lib/verification/dispute-handler'
 import { SupercellApiError } from '@/lib/verification/supercell-client'
 import { publishVerificationStarted, publishVerificationCompleted } from '@/lib/realtime/event-publisher'
@@ -45,6 +40,7 @@ const TIMEOUT_MINUTES = (() => {
  */
 interface DuelRow {
   id: string
+  status: 'ACTIVE' | 'VERIFYING'
   game: string              // 'CLASH_ROYALE' | 'BRAWL_STARS'
   gameMode: string          // rule.mode — the canonical in-game mode matched in the battle log
   creatorId: string
@@ -87,6 +83,7 @@ async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
 
   return {
     id: duel.id,
+    status: duel.status as 'ACTIVE' | 'VERIFYING',
     game: duel.game,
     gameMode: duel.rule.mode,
     creatorId: duel.creatorId,
@@ -195,122 +192,6 @@ function errorResult(duelId: string, reason: string): VerificationResult {
   }
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/**
- * Initiates or resumes verification for the given duel.
- *
- * Behaviour:
- *  - If a matching battle already exists in the battle log → returns
- *    `{ status: 'verified', winnerTag, battle }` immediately.
- *  - If no battle has been played yet → starts a background poller and returns
- *    `{ status: 'verifying' }`. The caller should persist this status and
- *    register the `onVerificationComplete` webhook / callback.
- *  - If the duel cannot be loaded → returns `{ status: 'error' }`.
- *  - If the Supercell API is unavailable (non-retryable) → returns
- *    `{ status: 'error' }`.
- *
- * @param duelId           - UUID of the duel to verify
- * @param onPollerResult   - Optional callback invoked when the background
- *                           poller reaches a terminal state. Ignored if the
- *                           battle is found on the first attempt.
- *                           TODO: replace with a DB update + webhook emit.
- */
-export async function verifyDuel(
-  duelId: string,
-  onPollerResult?: (result: VerificationResult) => Promise<void>,
-): Promise<VerificationResult> {
-  // ── 1. Load duel context ──────────────────────────────────────────────────
-  let duel: DuelRow | null
-
-  try {
-    duel = await loadDuelRow(duelId)
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err)
-    console.error({ msg: 'verify_duel_load_failed', duelId, error: reason })
-    return errorResult(duelId, `Failed to load duel: ${reason}`)
-  }
-
-  if (duel === null) {
-    console.error({ msg: 'verify_duel_not_found', duelId })
-    return errorResult(duelId, 'Duel not found or not in ACCEPTED status')
-  }
-
-  const ctx = buildContext(duel)
-
-  // ── 2. Immediate battle lookup ────────────────────────────────────────────
-  let battle: BattleRecord | null = null
-
-  try {
-    battle = await findMatchingBattle(ctx)
-  } catch (err) {
-    if (err instanceof SupercellApiError && !err.retryable) {
-      console.error({
-        msg: 'verify_duel_api_error_non_retryable',
-        duelId,
-        statusCode: err.statusCode,
-        reason: err.reason,
-      })
-      return errorResult(duelId, `Supercell API error (${err.statusCode}): ${err.reason}`)
-    }
-
-    // Retryable errors: fall through — poller will retry on the next tick
-    console.warn({
-      msg: 'verify_duel_api_error_retryable_starting_poller',
-      duelId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
-
-  if (battle !== null) {
-    console.info({
-      msg: 'verify_duel_immediate_match',
-      duelId,
-      winnerTag: battle.winnerTag,
-      battleTime: battle.battleTime.toISOString(),
-    })
-    const result = verifiedResult(ctx, battle)
-    // Settle immediately: pay the winner the full pot (credits) or flag on-chain.
-    await settleFromResult(duel, result)
-    return result
-  }
-
-  // No immediate battle — move the duel into VERIFYING so its state reflects
-  // that polling is underway (best-effort; settlement also accepts ACTIVE).
-  await prisma.duel.updateMany({
-    where: { id: duelId, status: 'ACTIVE' },
-    data: { status: 'VERIFYING', verifyingAt: new Date() },
-  })
-
-  // ── 3. No battle yet — start background poller ────────────────────────────
-  // Notify connected clients that verification has started
-  publishVerificationStarted({
-    duelId: ctx.duelId,
-    gameId: ctx.gameId,
-    player1Tag: ctx.player1Tag,
-    player2Tag: ctx.player2Tag,
-    // No targetUserId — broadcast to all authenticated clients; they filter by duelId
-  })
-
-  // Settlement always runs on the terminal result; any caller-supplied callback
-  // is invoked afterwards (e.g. to persist UI state or emit a webhook).
-  const terminalCallback = async (result: VerificationResult): Promise<void> => {
-    await settleFromResult(duel, result)
-    console.info({
-      msg: 'poller_result_received',
-      duelId,
-      status: result.status,
-      winnerTag: result.winnerTag,
-    })
-    if (onPollerResult) await onPollerResult(result)
-  }
-
-  startVerificationPoller(ctx, terminalCallback)
-
-  console.info({ msg: 'verify_duel_poller_started', duelId })
-  return verifyingResult(duelId)
-}
-
 // ─── Single-shot verification (serverless / cron-friendly) ────────────────────
 
 /**
@@ -332,12 +213,43 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
 
   const ctx = buildContext(duel)
 
+  // Events without a targetUserId broadcast to EVERY connected client, so all
+  // verification events are published once per participant — other users must
+  // never receive (or infer) another duel's progress or outcome.
+  const notifyParticipants = (publish: (targetUserId: string) => void): void => {
+    publish(duel.creatorId)
+    publish(duel.opponentId)
+  }
+
+  // First sweep visit: claim ACTIVE → VERIFYING (race-guarded — concurrent
+  // sweeps or a racing dispute claim exactly once) and tell both players
+  // verification has begun. Subsequent sweeps see VERIFYING and skip this.
+  if (duel.status === 'ACTIVE') {
+    const claimed = await prisma.duel.updateMany({
+      where: { id: duel.id, status: 'ACTIVE' },
+      data: { status: 'VERIFYING' },
+    })
+    if (claimed.count === 1) {
+      notifyParticipants((targetUserId) =>
+        publishVerificationStarted({
+          duelId,
+          gameId: ctx.gameId,
+          player1Tag: duel.creatorPlayerTag,
+          player2Tag: duel.opponentPlayerTag,
+          targetUserId,
+        }),
+      )
+    }
+  }
+
   // Window expired → keep funds locked and route to admin review.
   if (Date.now() >= ctx.timeoutAt.getTime()) {
     const reason = `No matching battle found within the verification window (expired ${ctx.timeoutAt.toISOString()})`
     await markDuelDisputed(duel.id)
     await openDispute(ctx, reason)
-    publishVerificationCompleted({ duelId, winnerTag: null, status: 'timeout', battleTime: null })
+    notifyParticipants((targetUserId) =>
+      publishVerificationCompleted({ duelId, winnerTag: null, status: 'timeout', battleTime: null, targetUserId }),
+    )
     return { duelId, status: 'timeout', winnerTag: null, battle: null, verifiedAt: new Date(), failureReason: reason }
   }
 
@@ -354,12 +266,15 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
   if (battle !== null) {
     const result = verifiedResult(ctx, battle)
     await settleFromResult(duel, result)
-    publishVerificationCompleted({
-      duelId,
-      winnerTag: battle.winnerTag,
-      status: 'verified',
-      battleTime: battle.battleTime.toISOString(),
-    })
+    notifyParticipants((targetUserId) =>
+      publishVerificationCompleted({
+        duelId,
+        winnerTag: battle.winnerTag,
+        status: 'verified',
+        battleTime: battle.battleTime.toISOString(),
+        targetUserId,
+      }),
+    )
     return result
   }
 

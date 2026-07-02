@@ -58,8 +58,12 @@ export const env = {
 
   // ── Realtime / internal ───────────────────────────────────────────────────
   INTERNAL_API_SECRET: required('INTERNAL_API_SECRET', process.env['INTERNAL_API_SECRET']),
-  /** Protects the benign duel crons (expire + verification sweep). */
+  /** Protects the benign duel-expiry cron. */
   EXPIRE_CRON_SECRET:  required('EXPIRE_CRON_SECRET',  process.env['EXPIRE_CRON_SECRET']),
+  /** Dedicated secret for the verification sweep (it triggers settlements, so
+   *  it warrants isolation). Falls back to EXPIRE_CRON_SECRET when unset for
+   *  backward compatibility — set it to complete the isolation. */
+  VERIFY_CRON_SECRET: optional(process.env['VERIFY_CRON_SECRET'], process.env['EXPIRE_CRON_SECRET'] ?? ''),
   /** Dedicated secret for the treasury payout worker — kept separate from the
    *  duel crons so a leak of one keeper token can't move real funds. */
   WITHDRAWAL_CRON_SECRET: required('WITHDRAWAL_CRON_SECRET', process.env['WITHDRAWAL_CRON_SECRET']),

@@ -45,9 +45,17 @@ export function toDepositView(d: Deposit) {
  * Returns the (idempotent) deposit record.
  */
 export async function confirmDeposit(user: User, signature: string): Promise<Deposit> {
-  // Fast idempotency path: already credited this signature.
+  // Fast idempotency path: already credited this signature. Guarded by owner —
+  // tx signatures are public on-chain, so without this check any authenticated
+  // user could replay a known signature and be echoed another user's deposit
+  // record (amounts, wallet, timing).
   const prior = await prisma.deposit.findUnique({ where: { txSignature: signature } });
-  if (prior) return prior;
+  if (prior) {
+    if (prior.userId !== user.id) {
+      throw new DepositError("ALREADY_CLAIMED", "This deposit belongs to a different account", 409);
+    }
+    return prior;
+  }
 
   const verified = await verifyDeposit(signature);
 
@@ -105,7 +113,14 @@ export async function confirmDeposit(user: User, signature: string): Promise<Dep
     // Lost the race to another concurrent confirm of the same signature.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       const dep = await prisma.deposit.findUnique({ where: { txSignature: signature } });
-      if (dep) return dep;
+      if (dep) {
+        // Same owner guard as the fast path — the racing confirm could in
+        // principle have been another account's.
+        if (dep.userId !== user.id) {
+          throw new DepositError("ALREADY_CLAIMED", "This deposit belongs to a different account", 409);
+        }
+        return dep;
+      }
     }
     throw e;
   }

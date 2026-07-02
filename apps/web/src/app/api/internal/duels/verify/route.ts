@@ -15,7 +15,12 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   return handle(async () => {
-    if (!isAuthorizedInternal(req, process.env.EXPIRE_CRON_SECRET)) {
+    // Own secret: the verification sweep triggers settlements (credits move
+    // between users), so it warrants isolation from the benign expiry cron.
+    // Falls back to EXPIRE_CRON_SECRET so existing deployments keep working —
+    // set VERIFY_CRON_SECRET to complete the isolation, then rotate.
+    const secret = process.env.VERIFY_CRON_SECRET ?? process.env.EXPIRE_CRON_SECRET;
+    if (!isAuthorizedInternal(req, secret)) {
       return fail("UNAUTHORIZED", "Invalid cron secret", 401);
     }
     const result = await runVerificationSweep();
