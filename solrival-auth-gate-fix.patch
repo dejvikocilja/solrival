@@ -1,0 +1,339 @@
+diff --git a/apps/web/src/components/duel/accept-duel-modal.tsx b/apps/web/src/components/duel/accept-duel-modal.tsx
+index b4a592a..1247550 100644
+--- a/apps/web/src/components/duel/accept-duel-modal.tsx
++++ b/apps/web/src/components/duel/accept-duel-modal.tsx
+@@ -2,8 +2,6 @@
+ 
+ import * as React from "react";
+ import Link from "next/link";
+-import { useWallet } from "@solana/wallet-adapter-react";
+-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+ import { useMutation, useQueryClient } from "@tanstack/react-query";
+ import { toast } from "sonner";
+ import { Loader2, Swords, TriangleAlert, Wallet, X } from "lucide-react";
+@@ -14,7 +12,7 @@ import { SolAmount } from "@/components/marketplace/sol-amount";
+ import { GAME_META } from "@/components/marketplace/game-meta";
+ import { FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
+ import { useBalance } from "@/hooks/useCredits";
+-import { useAuth } from "@/hooks/use-auth";
++import { useAuthGate } from "@/hooks/use-auth-gate";
+ import { acceptDuel } from "@/lib/api/duels";
+ import { ApiError } from "@/lib/api/client";
+ import type { DuelDetail } from "@/lib/api/duels";
+@@ -89,9 +87,7 @@ export function AcceptDuelModal({
+   const titleId = React.useId();
+   const dialogRef = React.useRef<HTMLDivElement>(null);
+ 
+-  const { connected } = useWallet();
+-  const { setVisible } = useWalletModal();
+-  const { status: authStatus, signIn } = useAuth();
++  const gate = useAuthGate();
+   const { data: balanceData } = useBalance();
+   const queryClient = useQueryClient();
+ 
+@@ -103,7 +99,7 @@ export function AcceptDuelModal({
+   const fee = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
+   const reward = pot - fee;
+   const available = balanceData ? BigInt(balanceData.balance.availableLamports) : null;
+-  const isAuthed = authStatus === "authenticated";
++  const isAuthed = gate.authenticated;
+   const insufficient = isAuthed && available != null && available < stake;
+   const game = GAME_META[duel.game];
+ 
+@@ -132,16 +128,10 @@ export function AcceptDuelModal({
+ 
+   async function onSubmit(e: React.FormEvent) {
+     e.preventDefault();
+-    if (accept.isPending) return;
++    if (accept.isPending || gate.busy) return;
+ 
+-    if (!connected) {
+-      setVisible(true);
+-      return;
+-    }
+-    if (!isAuthed) {
+-      await signIn();
+-      return;
+-    }
++    // Link validation is auth-independent — surface it before gating so the
++    // deferred accept can never fire with a bad link after sign-in.
+     const trimmed = friendLink.trim();
+     if (!trimmed) {
+       setLinkError("Paste your in-game friend link.");
+@@ -151,17 +141,11 @@ export function AcceptDuelModal({
+       setLinkError(`That doesn't look like a ${game.label} link (${FRIEND_LINK_HINT[duel.game]}).`);
+       return;
+     }
+-    if (insufficient) return;
+-    accept.mutate();
++    if (insufficient) return; // authed path; the server re-checks authoritatively
++    gate.run(() => accept.mutate());
+   }
+ 
+-  const submitLabel = !connected
+-    ? "Connect wallet"
+-    : !isAuthed
+-      ? "Sign in to accept"
+-      : insufficient
+-        ? "Insufficient balance"
+-        : "Accept challenge";
++  const submitLabel = insufficient ? "Insufficient balance" : gate.label("Accept challenge");
+ 
+   return (
+     <div
+@@ -269,7 +253,7 @@ export function AcceptDuelModal({
+               </Field>
+             ) : (
+               <p className="text-sm text-muted">
+-                {!connected
++                {!gate.connected
+                   ? "Connect your wallet and sign in to accept this challenge."
+                   : "Sign in to accept this challenge — your stake is locked from your SolRival balance."}
+               </p>
+@@ -280,7 +264,7 @@ export function AcceptDuelModal({
+             <Button type="button" variant="secondary" className="flex-1" disabled={accept.isPending} onClick={onClose}>
+               Cancel
+             </Button>
+-            <Button type="submit" className="flex-1" disabled={accept.isPending || insufficient}>
++            <Button type="submit" className="flex-1" disabled={accept.isPending || insufficient || gate.busy}>
+               {accept.isPending ? (
+                 <>
+                   <Loader2 className="h-4 w-4 animate-spin" />
+@@ -288,7 +272,11 @@ export function AcceptDuelModal({
+                 </>
+               ) : (
+                 <>
+-                  {!connected ? <Wallet className="h-4 w-4" /> : null}
++                  {gate.busy ? (
++                    <Loader2 className="h-4 w-4 animate-spin" />
++                  ) : !gate.connected ? (
++                    <Wallet className="h-4 w-4" />
++                  ) : null}
+                   {submitLabel}
+                 </>
+               )}
+diff --git a/apps/web/src/components/duel/create-duel-form.tsx b/apps/web/src/components/duel/create-duel-form.tsx
+index 3f79024..56c33fc 100644
+--- a/apps/web/src/components/duel/create-duel-form.tsx
++++ b/apps/web/src/components/duel/create-duel-form.tsx
+@@ -1,8 +1,7 @@
+ "use client";
+ 
+ import * as React from "react";
+-import { useWallet } from "@solana/wallet-adapter-react";
+-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
++import { useAuthGate } from "@/hooks/use-auth-gate";
+ import { Globe, Loader2, Lock, Wallet } from "lucide-react";
+ import { toast } from "sonner";
+ import {
+@@ -22,7 +21,6 @@ import { SolAmount } from "@/components/marketplace/sol-amount";
+ import { GAME_META } from "@/components/marketplace/game-meta";
+ import { RULE_META, FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
+ import { CreateDuelSuccess } from "@/components/duel/create-duel-success";
+-import { useAuth } from "@/hooks/use-auth";
+ import { useCreateDuel, type CreateStatus } from "@/hooks/use-create-duel";
+ import { cn } from "@/lib/utils";
+ 
+@@ -51,9 +49,7 @@ function stakeToLamports(sol: string): bigint | null {
+ }
+ 
+ export function CreateDuelForm() {
+-  const { connected } = useWallet();
+-  const { setVisible } = useWalletModal();
+-  const { status: authStatus, signIn } = useAuth();
++  const gate = useAuthGate();
+   const flow = useCreateDuel();
+ 
+   const [game, setGame] = React.useState<Game>("CLASH_ROYALE");
+@@ -103,29 +99,24 @@ export function CreateDuelForm() {
+ 
+   async function onSubmit(e: React.FormEvent) {
+     e.preventDefault();
+-    if (isBusy) return;
+-
+-    if (!connected) {
+-      setVisible(true); // open wallet modal
+-      return;
+-    }
+-    if (authStatus !== "authenticated") {
+-      await signIn();
+-      return;
+-    }
++    if (isBusy || gate.busy) return;
+ 
++    // Validate before gating so field errors show immediately — and so the
++    // deferred submit can never fire with an invalid form after sign-in.
+     const found = validate();
+     setErrors(found);
+     if (Object.keys(found).length > 0) return;
+ 
+     const lamports = stakeToLamports(stake)!;
+-    await flow.submit({
+-      game,
+-      ruleTemplate,
+-      visibility,
+-      stakeLamports: lamports.toString(),
+-      friendLink: friendLink.trim(),
+-    });
++    gate.run(() =>
++      flow.submit({
++        game,
++        ruleTemplate,
++        visibility,
++        stakeLamports: lamports.toString(),
++        friendLink: friendLink.trim(),
++      }),
++    );
+   }
+ 
+   function createAnother() {
+@@ -148,11 +139,7 @@ export function CreateDuelForm() {
+     potLamports !== null ? potLamports - (potLamports * BigInt(DUEL_RAKE_BPS)) / 10_000n : null;
+   const rules = RULES_BY_GAME[game];
+ 
+-  const submitLabel = !connected
+-    ? "Connect wallet to create"
+-    : authStatus !== "authenticated"
+-      ? "Sign in to create"
+-      : "Create duel";
++  const submitLabel = gate.label("Create duel");
+ 
+   return (
+     <form onSubmit={onSubmit} noValidate>
+@@ -320,10 +307,14 @@ export function CreateDuelForm() {
+               {busyLabel}
+             </div>
+           ) : (
+-            <Button type="submit" size="lg" className="w-full">
+-              {!connected ? <Wallet className="h-4 w-4" /> : null}
++            <Button type="submit" size="lg" className="w-full" disabled={gate.busy}>
++              {gate.busy ? (
++                <Loader2 className="h-4 w-4 animate-spin" />
++              ) : !gate.connected ? (
++                <Wallet className="h-4 w-4" />
++              ) : null}
+               {submitLabel}
+-              {connected && authStatus === "authenticated" && lamports ? (
++              {gate.authenticated && lamports ? (
+                 <SolAmount lamports={lamports.toString()} className="opacity-90" />
+               ) : null}
+             </Button>
+diff --git a/apps/web/src/hooks/use-auth-gate.ts b/apps/web/src/hooks/use-auth-gate.ts
+new file mode 100644
+index 0000000..b8721f3
+--- /dev/null
++++ b/apps/web/src/hooks/use-auth-gate.ts
+@@ -0,0 +1,113 @@
++"use client";
++
++import * as React from "react";
++import { useWallet } from "@solana/wallet-adapter-react";
++import { useWalletModal } from "@solana/wallet-adapter-react-ui";
++import { toast } from "sonner";
++import { useAuth } from "@/hooks/use-auth";
++
++/**
++ * Gate a primary action behind wallet connection + SIWS sign-in — as a single
++ * continuation instead of a click staircase.
++ *
++ * The old pattern made the user click the CTA up to three times ("Connect
++ * wallet" → click again → "Sign in" → click again → actual action), dropped
++ * their intent at each step, surfaced no error when the signature was
++ * declined, and allowed a second sign-in to fire mid-signature. This hook
++ * fixes all four:
++ *
++ *  - `run(action)` remembers the intent: connecting resumes into sign-in,
++ *    authenticating resumes into the action. One click end-to-end.
++ *  - Closing the wallet modal without connecting cancels the intent, so a
++ *    later unrelated connect can never fire a stale action.
++ *  - A declined/failed signature cancels the intent and surfaces the error
++ *    as a toast.
++ *  - `busy` is true while the adapter is connecting or the SIWS flow is
++ *    signing, so the CTA can disable and never double-fires.
++ */
++export function useAuthGate() {
++  const { connected, connecting } = useWallet();
++  const { visible, setVisible } = useWalletModal();
++  const { status, signIn, error } = useAuth();
++
++  // The deferred action, armed by run() while the user is un-gated.
++  const pendingRef = React.useRef<(() => unknown) | null>(null);
++  // Distinguishes a sign-in the gate initiated (whose failure we must surface
++  // and whose success we must resume) from sign-ins started elsewhere.
++  const gateSignInRef = React.useRef(false);
++
++  const signing = status === "signing";
++  const authenticated = status === "authenticated";
++  const busy = connecting || signing;
++
++  const cancel = React.useCallback(() => {
++    pendingRef.current = null;
++    gateSignInRef.current = false;
++  }, []);
++
++  /** Runs `action` now if fully authed; otherwise walks the gate and resumes. */
++  const run = React.useCallback(
++    (action: () => unknown) => {
++      if (authenticated) {
++        void action();
++        return;
++      }
++      pendingRef.current = action;
++      if (!connected) {
++        setVisible(true); // resume via the connected-effect below
++        return;
++      }
++      gateSignInRef.current = true;
++      void signIn(); // resume via the authenticated-effect below
++    },
++    [authenticated, connected, setVisible, signIn],
++  );
++
++  // Wallet modal dismissed without a connection → the user backed out; a later
++  // connect from elsewhere (e.g. the header) must not fire a stale action.
++  const prevVisible = React.useRef(visible);
++  React.useEffect(() => {
++    if (prevVisible.current && !visible && !connected && !connecting) cancel();
++    prevVisible.current = visible;
++  }, [visible, connected, connecting, cancel]);
++
++  // Connected with an armed intent → continue into sign-in (once).
++  React.useEffect(() => {
++    if (connected && pendingRef.current && !authenticated && !signing && !gateSignInRef.current) {
++      gateSignInRef.current = true;
++      void signIn();
++    }
++  }, [connected, authenticated, signing, signIn]);
++
++  // Authenticated with an armed intent → run it exactly once.
++  React.useEffect(() => {
++    if (authenticated && pendingRef.current) {
++      const action = pendingRef.current;
++      cancel();
++      void action();
++    }
++  }, [authenticated, cancel]);
++
++  // A gate-initiated sign-in failed (declined signature, network) → tell the
++  // user instead of a silently dead button, and disarm.
++  React.useEffect(() => {
++    if (gateSignInRef.current && status === "unauthenticated" && error) {
++      toast.error(error === "Sign-in failed" ? "Sign-in failed. Please try again." : error);
++      cancel();
++    }
++  }, [status, error, cancel]);
++
++  /** CTA label for the current gate stage. */
++  const label = React.useCallback(
++    (base: string): string => {
++      if (connecting) return "Connecting wallet…";
++      if (signing) return "Waiting for wallet…";
++      if (!connected) return "Connect wallet to continue";
++      if (!authenticated) return "Sign in to continue";
++      return base;
++    },
++    [connecting, signing, connected, authenticated],
++  );
++
++  return { run, busy, label, connected, authenticated };
++}

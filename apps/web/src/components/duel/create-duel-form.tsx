@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { useAuthGate } from "@/hooks/use-auth-gate";
 import { Globe, Loader2, Lock, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -22,7 +21,6 @@ import { SolAmount } from "@/components/marketplace/sol-amount";
 import { GAME_META } from "@/components/marketplace/game-meta";
 import { RULE_META, FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
 import { CreateDuelSuccess } from "@/components/duel/create-duel-success";
-import { useAuth } from "@/hooks/use-auth";
 import { useCreateDuel, type CreateStatus } from "@/hooks/use-create-duel";
 import { cn } from "@/lib/utils";
 
@@ -51,9 +49,7 @@ function stakeToLamports(sol: string): bigint | null {
 }
 
 export function CreateDuelForm() {
-  const { connected } = useWallet();
-  const { setVisible } = useWalletModal();
-  const { status: authStatus, signIn } = useAuth();
+  const gate = useAuthGate();
   const flow = useCreateDuel();
 
   const [game, setGame] = React.useState<Game>("CLASH_ROYALE");
@@ -103,29 +99,24 @@ export function CreateDuelForm() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (isBusy) return;
+    if (isBusy || gate.busy) return;
 
-    if (!connected) {
-      setVisible(true); // open wallet modal
-      return;
-    }
-    if (authStatus !== "authenticated") {
-      await signIn();
-      return;
-    }
-
+    // Validate before gating so field errors show immediately — and so the
+    // deferred submit can never fire with an invalid form after sign-in.
     const found = validate();
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
     const lamports = stakeToLamports(stake)!;
-    await flow.submit({
-      game,
-      ruleTemplate,
-      visibility,
-      stakeLamports: lamports.toString(),
-      friendLink: friendLink.trim(),
-    });
+    gate.run(() =>
+      flow.submit({
+        game,
+        ruleTemplate,
+        visibility,
+        stakeLamports: lamports.toString(),
+        friendLink: friendLink.trim(),
+      }),
+    );
   }
 
   function createAnother() {
@@ -148,11 +139,7 @@ export function CreateDuelForm() {
     potLamports !== null ? potLamports - (potLamports * BigInt(DUEL_RAKE_BPS)) / 10_000n : null;
   const rules = RULES_BY_GAME[game];
 
-  const submitLabel = !connected
-    ? "Connect wallet to create"
-    : authStatus !== "authenticated"
-      ? "Sign in to create"
-      : "Create duel";
+  const submitLabel = gate.label("Create duel");
 
   return (
     <form onSubmit={onSubmit} noValidate>
@@ -320,10 +307,14 @@ export function CreateDuelForm() {
               {busyLabel}
             </div>
           ) : (
-            <Button type="submit" size="lg" className="w-full">
-              {!connected ? <Wallet className="h-4 w-4" /> : null}
+            <Button type="submit" size="lg" className="w-full" disabled={gate.busy}>
+              {gate.busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : !gate.connected ? (
+                <Wallet className="h-4 w-4" />
+              ) : null}
               {submitLabel}
-              {connected && authStatus === "authenticated" && lamports ? (
+              {gate.authenticated && lamports ? (
                 <SolAmount lamports={lamports.toString()} className="opacity-90" />
               ) : null}
             </Button>

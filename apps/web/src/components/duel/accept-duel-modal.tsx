@@ -2,8 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, Swords, TriangleAlert, Wallet, X } from "lucide-react";
@@ -14,7 +12,7 @@ import { SolAmount } from "@/components/marketplace/sol-amount";
 import { GAME_META } from "@/components/marketplace/game-meta";
 import { FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
 import { useBalance } from "@/hooks/useCredits";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuthGate } from "@/hooks/use-auth-gate";
 import { acceptDuel } from "@/lib/api/duels";
 import { ApiError } from "@/lib/api/client";
 import type { DuelDetail } from "@/lib/api/duels";
@@ -89,9 +87,7 @@ export function AcceptDuelModal({
   const titleId = React.useId();
   const dialogRef = React.useRef<HTMLDivElement>(null);
 
-  const { connected } = useWallet();
-  const { setVisible } = useWalletModal();
-  const { status: authStatus, signIn } = useAuth();
+  const gate = useAuthGate();
   const { data: balanceData } = useBalance();
   const queryClient = useQueryClient();
 
@@ -103,7 +99,7 @@ export function AcceptDuelModal({
   const fee = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
   const reward = pot - fee;
   const available = balanceData ? BigInt(balanceData.balance.availableLamports) : null;
-  const isAuthed = authStatus === "authenticated";
+  const isAuthed = gate.authenticated;
   const insufficient = isAuthed && available != null && available < stake;
   const game = GAME_META[duel.game];
 
@@ -132,16 +128,10 @@ export function AcceptDuelModal({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (accept.isPending) return;
+    if (accept.isPending || gate.busy) return;
 
-    if (!connected) {
-      setVisible(true);
-      return;
-    }
-    if (!isAuthed) {
-      await signIn();
-      return;
-    }
+    // Link validation is auth-independent — surface it before gating so the
+    // deferred accept can never fire with a bad link after sign-in.
     const trimmed = friendLink.trim();
     if (!trimmed) {
       setLinkError("Paste your in-game friend link.");
@@ -151,17 +141,11 @@ export function AcceptDuelModal({
       setLinkError(`That doesn't look like a ${game.label} link (${FRIEND_LINK_HINT[duel.game]}).`);
       return;
     }
-    if (insufficient) return;
-    accept.mutate();
+    if (insufficient) return; // authed path; the server re-checks authoritatively
+    gate.run(() => accept.mutate());
   }
 
-  const submitLabel = !connected
-    ? "Connect wallet"
-    : !isAuthed
-      ? "Sign in to accept"
-      : insufficient
-        ? "Insufficient balance"
-        : "Accept challenge";
+  const submitLabel = insufficient ? "Insufficient balance" : gate.label("Accept challenge");
 
   return (
     <div
@@ -269,7 +253,7 @@ export function AcceptDuelModal({
               </Field>
             ) : (
               <p className="text-sm text-muted">
-                {!connected
+                {!gate.connected
                   ? "Connect your wallet and sign in to accept this challenge."
                   : "Sign in to accept this challenge — your stake is locked from your SolRival balance."}
               </p>
@@ -280,7 +264,7 @@ export function AcceptDuelModal({
             <Button type="button" variant="secondary" className="flex-1" disabled={accept.isPending} onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" disabled={accept.isPending || insufficient}>
+            <Button type="submit" className="flex-1" disabled={accept.isPending || insufficient || gate.busy}>
               {accept.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -288,7 +272,11 @@ export function AcceptDuelModal({
                 </>
               ) : (
                 <>
-                  {!connected ? <Wallet className="h-4 w-4" /> : null}
+                  {gate.busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : !gate.connected ? (
+                    <Wallet className="h-4 w-4" />
+                  ) : null}
                   {submitLabel}
                 </>
               )}
