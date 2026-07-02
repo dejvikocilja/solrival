@@ -79,7 +79,17 @@ pnpm --filter web test         # unit tests
 pnpm --filter web dev          # starts on :3000 — Codespaces forwards the port; click the popup
 ```
 
-Walk the happy path in the forwarded browser tab, with Phantom on **devnet**:
+**First, run the automated smoke test** (in a second terminal, with the dev server up). It drives the *real* APIs end-to-end — SIWS auth for two ephemeral wallets, on-chain devnet deposits, duel create/accept with ledger-lock assertions, the verification sweep, and a withdrawal paid out by the treasury worker:
+
+```bash
+VERIFY_CRON_SECRET=$EXPIRE_CRON_SECRET \
+WITHDRAWAL_CRON_SECRET=$WITHDRAWAL_CRON_SECRET \
+pnpm --filter web smoke
+```
+
+Devnet airdrops are rate-limited; if funding fails, set `SMOKE_FUNDER_SECRET` to a pre-funded devnet key. The one thing the script can't do is play the in-game battle — the duel it leaves open auto-disputes at the verification timeout, which safely exercises that path too.
+
+Then walk the happy path manually in the forwarded browser tab, with Phantom on **devnet**:
 
 1. **Connect wallet** → sign in.
 2. **Wallet → Deposit** a little SOL. One wallet popup; balance appears net of the 2% fee.
@@ -112,7 +122,9 @@ Copy `apps/web/.env.example` and fill it in. The variables split across hosts li
 
 **Web host (Vercel/Railway):** `DATABASE_URL`, `DIRECT_URL`, `AUTH_JWT_SECRET`, `SIWS_DOMAIN`, `ADMIN_WALLET_ALLOWLIST`, `INTERNAL_API_SECRET`, `EXPIRE_CRON_SECRET`, `NEXT_PUBLIC_*` (cluster, RPC URL, program id, **`NEXT_PUBLIC_TREASURY_WALLET`**, `NEXT_PUBLIC_DEPOSIT_FEE_BPS`, `NEXT_PUBLIC_REFERRAL_REWARD_BPS`, app URL).
 
-**Static-egress sweep host (the all-in-one `apps/web` container, or a future dedicated worker):** also needs `CLASH_ROYALE_API_TOKEN`, `BRAWL_STARS_API_TOKEN` (both bound to this host's IP in the Supercell developer portal) and `VERIFICATION_POLL_INTERVAL_MS`, in addition to the web vars above.
+**Static-egress sweep host (the all-in-one `apps/web` container, or a future dedicated worker):** also needs `CLASH_ROYALE_API_TOKEN`, `BRAWL_STARS_API_TOKEN` (both bound to this host's IP in the Supercell developer portal) and `VERIFICATION_POLL_INTERVAL_MS`, in addition to the web vars above. Optionally set `VERIFY_CRON_SECRET` to give the settlement-triggering verify sweep its own token (it falls back to `EXPIRE_CRON_SECRET` when unset).
+
+> **No static IP? Use the RoyaleAPI proxy instead.** Create your Supercell keys whitelisting IP `45.79.218.79`, then set `CLASH_ROYALE_API_BASE_URL=https://proxy.royaleapi.dev/v1` and `BRAWL_STARS_API_BASE_URL=https://proxy.royaleapi.dev/v1` — the community proxy forwards to the official APIs for Clash Royale, Clash of Clans and Brawl Stars ([docs](https://docs.royaleapi.com/proxy.html)). This removes the static-egress requirement entirely (the sweep can then run anywhere, even Vercel Cron). Trade-off: your tokens and verification traffic route through RoyaleAPI's infrastructure — fine for launch; move to your own static-IP host if you outgrow it.
 
 **Treasury secret — pick one home for `TREASURY_SECRET_KEY`:**
 - **Simple:** put it on the **web host** and let a scheduler hit `POST /api/internal/withdrawals/process`. Treasury payouts are plain SOL transfers and don't need static egress, so this works on Vercel.
@@ -128,7 +140,7 @@ Three endpoints must be hit on a schedule (sent as `Authorization: Bearer <secre
 
 | Endpoint | Secret | Cadence | Purpose |
 |---|---|---|---|
-| `POST /api/internal/duels/verify` | `EXPIRE_CRON_SECRET` | every 30–60 s | reads battle logs for live duels, settles winners, disputes timeouts (**must run from the static-egress host** — calls Supercell) |
+| `POST /api/internal/duels/verify` | `VERIFY_CRON_SECRET` (falls back to `EXPIRE_CRON_SECRET`) | every 30–60 s | reads battle logs for live duels, settles winners, disputes timeouts (**runs from the static-egress host** — or anywhere, if using the RoyaleAPI proxy above) |
 | `POST /api/internal/duels/expire` | `EXPIRE_CRON_SECRET` | every 1–2 min | sweeps expired open (never-accepted) duels |
 | `POST /api/internal/withdrawals/process` | `WITHDRAWAL_CRON_SECRET` | every 1–2 min | pays out approved withdrawals from the treasury |
 

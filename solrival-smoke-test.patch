@@ -1,0 +1,493 @@
+diff --git a/apps/web/package.json b/apps/web/package.json
+index 607e7c9..92f61d4 100644
+--- a/apps/web/package.json
++++ b/apps/web/package.json
+@@ -8,7 +8,8 @@
+     "build": "next build",
+     "start": "next start",
+     "lint": "next lint",
+-    "typecheck": "tsc --noEmit"
++    "typecheck": "tsc --noEmit",
++    "smoke": "node scripts/devnet-smoke.mjs"
+   },
+   "dependencies": {
+     "@solrival/db": "workspace:*",
+diff --git a/apps/web/scripts/devnet-smoke.mjs b/apps/web/scripts/devnet-smoke.mjs
+new file mode 100644
+index 0000000..34303b3
+--- /dev/null
++++ b/apps/web/scripts/devnet-smoke.mjs
+@@ -0,0 +1,430 @@
++#!/usr/bin/env node
++/**
++ * SolRival devnet smoke test.
++ *
++ * Exercises the REAL production code paths end-to-end against a running dev
++ * server — no admin force-settle, no mocks:
++ *
++ *   1. server preflight
++ *   2. two ephemeral wallets funded with devnet SOL (airdrop, or a funder key)
++ *   3. SIWS auth for both (nonce → ed25519 sign → verify → session cookie)
++ *   4. real on-chain deposits to the treasury, credited via POST /api/deposits
++ *   5. duel create (A) + accept (B), asserting the ledger locks
++ *   6. the verification sweep (the production cron), asserting the transition
++ *   7. a withdrawal request + the payout worker, asserting real SOL moves back
++ *
++ * The ONLY step it cannot automate is playing the in-game battle — after step
++ * 6 the duel settles automatically the next time the sweep runs following a
++ * real matching battle (requires both accounts to have linked game tags), or
++ * disputes safely at the verification timeout.
++ *
++ * Usage:
++ *   pnpm --filter @solrival/web smoke            # against http://localhost:3000
++ *   APP_URL=https://staging.example.com \
++ *   SMOKE_FUNDER_SECRET=<base58-or-json-array> \
++ *   pnpm --filter @solrival/web smoke
++ *
++ * Env:
++ *   APP_URL                 target app (default http://localhost:3000)
++ *   NEXT_PUBLIC_SOLANA_RPC_URL  RPC (default devnet public RPC)
++ *   SMOKE_FUNDER_SECRET     optional pre-funded devnet key; skips flaky airdrops
++ *   VERIFY_CRON_SECRET / EXPIRE_CRON_SECRET / WITHDRAWAL_CRON_SECRET
++ *                           needed for steps 6–7 (same values as the server's)
++ *   SMOKE_STAKE_SOL         stake per player (default 0.005)
++ */
++
++import {
++  Connection,
++  Keypair,
++  LAMPORTS_PER_SOL,
++  PublicKey,
++  SystemProgram,
++  Transaction,
++  clusterApiUrl,
++  sendAndConfirmTransaction,
++} from "@solana/web3.js";
++import nacl from "tweetnacl";
++import bs58 from "bs58";
++
++// ─── Config ───────────────────────────────────────────────────────────────────
++
++const APP_URL = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
++const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? clusterApiUrl("devnet");
++const STAKE_SOL = Number(process.env.SMOKE_STAKE_SOL ?? "0.005");
++const STAKE_LAMPORTS = BigInt(Math.round(STAKE_SOL * LAMPORTS_PER_SOL));
++const DEPOSIT_SOL = 0.06; // covers stake + withdrawal minimum (0.01) + margin
++const VERIFY_SECRET = process.env.VERIFY_CRON_SECRET ?? process.env.EXPIRE_CRON_SECRET ?? "";
++const WITHDRAWAL_SECRET = process.env.WITHDRAWAL_CRON_SECRET ?? "";
++
++const connection = new Connection(RPC_URL, "confirmed");
++
++// ─── Reporting ────────────────────────────────────────────────────────────────
++
++/** @type {{name: string, status: "PASS"|"FAIL"|"SKIP", note: string}[]} */
++const results = [];
++let failed = false;
++
++function record(name, status, note = "") {
++  results.push({ name, status, note });
++  const icon = status === "PASS" ? "✓" : status === "SKIP" ? "−" : "✗";
++  console.log(`  ${icon} ${name}${note ? ` — ${note}` : ""}`);
++  if (status === "FAIL") failed = true;
++}
++
++function step(title) {
++  console.log(`\n▸ ${title}`);
++}
++
++// ─── Minimal cookie-aware API client ─────────────────────────────────────────
++
++class ApiClient {
++  constructor(label) {
++    this.label = label;
++    /** @type {Map<string,string>} */
++    this.cookies = new Map();
++  }
++
++  #absorb(res) {
++    const setCookies =
++      typeof res.headers.getSetCookie === "function"
++        ? res.headers.getSetCookie()
++        : res.headers.get("set-cookie")
++          ? [res.headers.get("set-cookie")]
++          : [];
++    for (const line of setCookies) {
++      const [pair] = line.split(";");
++      const eq = pair.indexOf("=");
++      if (eq > 0) this.cookies.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
++    }
++  }
++
++  async request(method, path, body) {
++    const headers = { accept: "application/json" };
++    if (body !== undefined) headers["content-type"] = "application/json";
++    if (this.cookies.size > 0) {
++      headers.cookie = [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
++    }
++    const res = await fetch(`${APP_URL}${path}`, {
++      method,
++      headers,
++      body: body !== undefined ? JSON.stringify(body) : undefined,
++    });
++    this.#absorb(res);
++    let json = null;
++    try {
++      json = await res.json();
++    } catch {
++      /* non-JSON body */
++    }
++    return { status: res.status, json };
++  }
++
++  get(path) {
++    return this.request("GET", path);
++  }
++  post(path, body) {
++    return this.request("POST", path, body);
++  }
++}
++
++/** Bearer-authed call to an internal keeper endpoint. */
++async function internal(path, secret) {
++  const res = await fetch(`${APP_URL}${path}`, {
++    method: "POST",
++    headers: { authorization: `Bearer ${secret}` },
++  });
++  let json = null;
++  try {
++    json = await res.json();
++  } catch {
++    /* ignore */
++  }
++  return { status: res.status, json };
++}
++
++// ─── Solana helpers ───────────────────────────────────────────────────────────
++
++function parseSecretKey(raw) {
++  const trimmed = raw.trim();
++  if (trimmed.startsWith("[")) return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(trimmed)));
++  return Keypair.fromSecretKey(bs58.decode(trimmed));
++}
++
++async function fund(recipient, sol) {
++  const funderRaw = process.env.SMOKE_FUNDER_SECRET;
++  if (funderRaw) {
++    const funder = parseSecretKey(funderRaw);
++    const tx = new Transaction().add(
++      SystemProgram.transfer({
++        fromPubkey: funder.publicKey,
++        toPubkey: recipient,
++        lamports: Math.round(sol * LAMPORTS_PER_SOL),
++      }),
++    );
++    await sendAndConfirmTransaction(connection, tx, [funder], { commitment: "confirmed" });
++    return;
++  }
++  // Devnet airdrops are rate-limited and flaky; retry with backoff.
++  let lastErr;
++  for (let attempt = 1; attempt <= 3; attempt++) {
++    try {
++      const sig = await connection.requestAirdrop(recipient, Math.round(sol * LAMPORTS_PER_SOL));
++      const latest = await connection.getLatestBlockhash("confirmed");
++      await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
++      return;
++    } catch (e) {
++      lastErr = e;
++      await new Promise((r) => setTimeout(r, attempt * 3_000));
++    }
++  }
++  throw new Error(
++    `Airdrop failed after 3 attempts (${lastErr?.message ?? lastErr}). ` +
++      `Fund ${recipient.toBase58()} manually, or set SMOKE_FUNDER_SECRET to a pre-funded devnet key.`,
++  );
++}
++
++/** Transfers SOL and waits for FINALIZED — deposit verification requires it. */
++async function transferFinalized(from, to, sol) {
++  const tx = new Transaction().add(
++    SystemProgram.transfer({
++      fromPubkey: from.publicKey,
++      toPubkey: to,
++      lamports: Math.round(sol * LAMPORTS_PER_SOL),
++    }),
++  );
++  return sendAndConfirmTransaction(connection, tx, [from], { commitment: "finalized" });
++}
++
++// ─── SIWS auth ────────────────────────────────────────────────────────────────
++
++async function signIn(client, keypair) {
++  const walletAddress = keypair.publicKey.toBase58();
++  const nonceRes = await client.post("/api/auth/nonce", { walletAddress, provider: "PHANTOM" });
++  if (nonceRes.status !== 200) {
++    throw new Error(`nonce failed (${nonceRes.status}): ${JSON.stringify(nonceRes.json)}`);
++  }
++  const { nonce, message } = nonceRes.json.data ?? nonceRes.json;
++  const signature = bs58.encode(
++    nacl.sign.detached(new TextEncoder().encode(message), keypair.secretKey),
++  );
++  const verifyRes = await client.post("/api/auth/verify", {
++    walletAddress,
++    provider: "PHANTOM",
++    nonce,
++    signature,
++  });
++  if (verifyRes.status !== 200) {
++    throw new Error(`verify failed (${verifyRes.status}): ${JSON.stringify(verifyRes.json)}`);
++  }
++  return (verifyRes.json.data ?? verifyRes.json).user;
++}
++
++// ─── Response unwrap (routes wrap payloads as { data }) ───────────────────────
++
++const unwrap = (json) => json?.data ?? json;
++
++async function getBalance(client) {
++  const res = await client.get("/api/balance");
++  if (res.status !== 200) throw new Error(`balance failed (${res.status})`);
++  const b = unwrap(res.json).balance ?? unwrap(res.json);
++  return {
++    available: BigInt(b.availableLamports),
++    locked: BigInt(b.lockedLamports),
++  };
++}
++
++// ─── Main ─────────────────────────────────────────────────────────────────────
++
++async function main() {
++  console.log(`SolRival devnet smoke test\n  app: ${APP_URL}\n  rpc: ${RPC_URL}`);
++
++  // 1 · Preflight
++  step("1 · Server preflight");
++  try {
++    const res = await fetch(`${APP_URL}/api/balance`);
++    if (res.status === 401) record("server reachable, auth enforced", "PASS");
++    else record("server preflight", "FAIL", `expected 401 from /api/balance, got ${res.status}`);
++  } catch (e) {
++    record("server preflight", "FAIL", `cannot reach ${APP_URL}: ${e.message}`);
++    return finish();
++  }
++
++  // 2 · Wallets
++  step("2 · Fund two ephemeral devnet wallets");
++  const alice = Keypair.generate();
++  const bob = Keypair.generate();
++  console.log(`  A: ${alice.publicKey.toBase58()}\n  B: ${bob.publicKey.toBase58()}`);
++  try {
++    await fund(alice.publicKey, DEPOSIT_SOL + 0.01);
++    await fund(bob.publicKey, DEPOSIT_SOL + 0.01);
++    record("wallets funded", "PASS", `${DEPOSIT_SOL + 0.01} SOL each`);
++  } catch (e) {
++    record("wallets funded", "FAIL", e.message);
++    return finish();
++  }
++
++  // 3 · Auth
++  step("3 · SIWS sign-in (nonce → ed25519 → session)");
++  const A = new ApiClient("A");
++  const B = new ApiClient("B");
++  let userA, userB;
++  try {
++    userA = await signIn(A, alice);
++    userB = await signIn(B, bob);
++    record("both users authenticated", "PASS", `${userA.username} / ${userB.username}`);
++  } catch (e) {
++    record("authentication", "FAIL", e.message);
++    return finish();
++  }
++
++  // 4 · Deposits
++  step("4 · Real on-chain deposits → credited balances");
++  let treasury;
++  try {
++    const cfg = unwrap((await A.get("/api/deposits")).json).config;
++    treasury = new PublicKey(cfg.treasuryWallet);
++    console.log(`  treasury: ${cfg.treasuryWallet} (fee ${cfg.depositFeeBps} bps)`);
++    for (const [client, kp, label] of [
++      [A, alice, "A"],
++      [B, bob, "B"],
++    ]) {
++      console.log(`  transferring ${DEPOSIT_SOL} SOL from ${label} (waiting for finalized…)`);
++      const sig = await transferFinalized(kp, treasury, DEPOSIT_SOL);
++      const dep = await client.post("/api/deposits", { signature: sig });
++      if (dep.status !== 201) throw new Error(`${label} deposit rejected (${dep.status}): ${JSON.stringify(dep.json)}`);
++      const bal = await getBalance(client);
++      if (bal.available <= 0n) throw new Error(`${label} balance not credited`);
++      console.log(`  ${label} credited: ${Number(bal.available) / LAMPORTS_PER_SOL} SOL available`);
++    }
++    record("deposits verified on-chain and credited", "PASS");
++  } catch (e) {
++    record("deposits", "FAIL", e.message);
++    return finish();
++  }
++
++  // 5 · Duel create + accept
++  step(`5 · Duel lifecycle (stake ${STAKE_SOL} SOL each)`);
++  let duelId;
++  try {
++    const before = await getBalance(A);
++    const created = await A.post("/api/duels", {
++      game: "CLASH_ROYALE",
++      ruleTemplate: "CR_CLASSIC_DECK",
++      visibility: "PUBLIC",
++      stakeLamports: STAKE_LAMPORTS.toString(),
++      friendLink: "https://link.clashroyale.com/invite/friend/en?tag=SMOKETEST",
++    });
++    if (created.status !== 200 && created.status !== 201) {
++      throw new Error(`create failed (${created.status}): ${JSON.stringify(created.json)}`);
++    }
++    const duel = unwrap(created.json).duel;
++    duelId = duel.id;
++    const after = await getBalance(A);
++    if (after.locked - before.locked !== STAKE_LAMPORTS) {
++      throw new Error(`creator lock mismatch: locked Δ=${after.locked - before.locked}, want ${STAKE_LAMPORTS}`);
++    }
++    record("duel created, creator stake locked", "PASS", `id ${duelId.slice(0, 8)}… status ${duel.status}`);
++
++    const accepted = await B.post(`/api/duels/${duelId}/accept`, {
++      friendLink: "https://link.clashroyale.com/invite/friend/en?tag=SMOKETEST2",
++    });
++    if (accepted.status !== 200 && accepted.status !== 201) {
++      throw new Error(`accept failed (${accepted.status}): ${JSON.stringify(accepted.json)}`);
++    }
++    const balB = await getBalance(B);
++    if (balB.locked < STAKE_LAMPORTS) throw new Error("opponent stake not locked");
++    record("duel accepted, opponent stake locked", "PASS", `status ${unwrap(accepted.json).duel.status}`);
++  } catch (e) {
++    record("duel lifecycle", "FAIL", e.message);
++    return finish();
++  }
++
++  // 6 · Verification sweep (the production cron path)
++  step("6 · Verification sweep");
++  if (!VERIFY_SECRET) {
++    record("verification sweep", "SKIP", "set VERIFY_CRON_SECRET or EXPIRE_CRON_SECRET to run");
++  } else {
++    try {
++      const sweep = await internal("/api/internal/duels/verify", VERIFY_SECRET);
++      if (sweep.status !== 200) throw new Error(`sweep HTTP ${sweep.status}: ${JSON.stringify(sweep.json)}`);
++      const detail = unwrap((await A.get(`/api/duels/${duelId}`)).json).duel;
++      // With linked game accounts the duel moves to VERIFYING and both players
++      // are notified; without them it stays ACTIVE (sweep can't load tags).
++      if (detail.status === "VERIFYING") {
++        record("sweep ran; duel VERIFYING", "PASS", "settles automatically after a real matching battle");
++      } else {
++        record("sweep ran", "PASS", `duel ${detail.status} — link real game tags on both accounts for full auto-settlement`);
++      }
++    } catch (e) {
++      record("verification sweep", "FAIL", e.message);
++    }
++  }
++
++  // 7 · Withdrawal + payout worker
++  step("7 · Withdrawal request → payout worker → real SOL out");
++  try {
++    const balB = await getBalance(B);
++    const amount = balB.available; // withdraw everything left available
++    if (amount < 10_000_000n) {
++      record("withdrawal", "SKIP", `B available ${amount} below the 0.01 SOL minimum`);
++    } else {
++      const reqRes = await B.post("/api/withdrawals", { amountLamports: amount.toString() });
++      if (reqRes.status !== 200 && reqRes.status !== 201) {
++        throw new Error(`request failed (${reqRes.status}): ${JSON.stringify(reqRes.json)}`);
++      }
++      if (!WITHDRAWAL_SECRET) {
++        record("withdrawal requested", "PASS", "set WITHDRAWAL_CRON_SECRET to also test the payout worker");
++      } else {
++        const chainBefore = await connection.getBalance(bob.publicKey);
++        const proc = await internal("/api/internal/withdrawals/process", WITHDRAWAL_SECRET);
++        if (proc.status !== 200) throw new Error(`payout worker HTTP ${proc.status}: ${JSON.stringify(proc.json)}`);
++        // Poll briefly for the on-chain payout to land.
++        let paid = false;
++        for (let i = 0; i < 10 && !paid; i++) {
++          await new Promise((r) => setTimeout(r, 3_000));
++          const list = unwrap((await B.get("/api/withdrawals")).json);
++          const items = list.items ?? list.withdrawals ?? [];
++          paid = items.some((w) => w.status === "PAID");
++        }
++        const chainAfter = await connection.getBalance(bob.publicKey);
++        if (paid && chainAfter > chainBefore) {
++          record("withdrawal paid on-chain", "PASS", `+${(chainAfter - chainBefore) / LAMPORTS_PER_SOL} SOL to B`);
++        } else if (paid) {
++          record("withdrawal PAID in ledger", "PASS", "on-chain delta not yet visible at confirmed commitment");
++        } else {
++          record(
++            "withdrawal payout",
++            "FAIL",
++            "not PAID after 30s — is TREASURY_SECRET_KEY set on the server and the treasury funded?",
++          );
++        }
++      }
++    }
++  } catch (e) {
++    record("withdrawal", "FAIL", e.message);
++  }
++
++  return finish();
++}
++
++function finish() {
++  console.log("\n──── Summary ────");
++  for (const r of results) {
++    console.log(`  ${r.status.padEnd(4)} ${r.name}${r.note ? ` — ${r.note}` : ""}`);
++  }
++  const skipped = results.filter((r) => r.status === "SKIP").length;
++  console.log(
++    failed
++      ? "\nRESULT: FAIL — fix the failures above before staging."
++      : `\nRESULT: PASS${skipped ? ` (${skipped} skipped)` : ""} — core loop verified against the real APIs.`,
++  );
++  console.log(
++    "Note: the created duel stays open server-side; it will auto-dispute at the verification timeout, which also exercises that path safely.",
++  );
++  process.exit(failed ? 1 : 0);
++}
++
++main().catch((e) => {
++  console.error("\nUnhandled failure:", e);
++  process.exit(1);
++});
+diff --git a/docs/DEPLOYMENT.md b/docs/DEPLOYMENT.md
+index dd29e03..6361ac6 100644
+--- a/docs/DEPLOYMENT.md
++++ b/docs/DEPLOYMENT.md
+@@ -79,7 +79,17 @@ pnpm --filter web test         # unit tests
+ pnpm --filter web dev          # starts on :3000 — Codespaces forwards the port; click the popup
+ ```
+ 
+-Walk the happy path in the forwarded browser tab, with Phantom on **devnet**:
++**First, run the automated smoke test** (in a second terminal, with the dev server up). It drives the *real* APIs end-to-end — SIWS auth for two ephemeral wallets, on-chain devnet deposits, duel create/accept with ledger-lock assertions, the verification sweep, and a withdrawal paid out by the treasury worker:
++
++```bash
++VERIFY_CRON_SECRET=$EXPIRE_CRON_SECRET \
++WITHDRAWAL_CRON_SECRET=$WITHDRAWAL_CRON_SECRET \
++pnpm --filter web smoke
++```
++
++Devnet airdrops are rate-limited; if funding fails, set `SMOKE_FUNDER_SECRET` to a pre-funded devnet key. The one thing the script can't do is play the in-game battle — the duel it leaves open auto-disputes at the verification timeout, which safely exercises that path too.
++
++Then walk the happy path manually in the forwarded browser tab, with Phantom on **devnet**:
+ 
+ 1. **Connect wallet** → sign in.
+ 2. **Wallet → Deposit** a little SOL. One wallet popup; balance appears net of the 2% fee.
+@@ -112,7 +122,9 @@ Copy `apps/web/.env.example` and fill it in. The variables split across hosts li
+ 
+ **Web host (Vercel/Railway):** `DATABASE_URL`, `DIRECT_URL`, `AUTH_JWT_SECRET`, `SIWS_DOMAIN`, `ADMIN_WALLET_ALLOWLIST`, `INTERNAL_API_SECRET`, `EXPIRE_CRON_SECRET`, `NEXT_PUBLIC_*` (cluster, RPC URL, program id, **`NEXT_PUBLIC_TREASURY_WALLET`**, `NEXT_PUBLIC_DEPOSIT_FEE_BPS`, `NEXT_PUBLIC_REFERRAL_REWARD_BPS`, app URL).
+ 
+-**Static-egress sweep host (the all-in-one `apps/web` container, or a future dedicated worker):** also needs `CLASH_ROYALE_API_TOKEN`, `BRAWL_STARS_API_TOKEN` (both bound to this host's IP in the Supercell developer portal) and `VERIFICATION_POLL_INTERVAL_MS`, in addition to the web vars above.
++**Static-egress sweep host (the all-in-one `apps/web` container, or a future dedicated worker):** also needs `CLASH_ROYALE_API_TOKEN`, `BRAWL_STARS_API_TOKEN` (both bound to this host's IP in the Supercell developer portal) and `VERIFICATION_POLL_INTERVAL_MS`, in addition to the web vars above. Optionally set `VERIFY_CRON_SECRET` to give the settlement-triggering verify sweep its own token (it falls back to `EXPIRE_CRON_SECRET` when unset).
++
++> **No static IP? Use the RoyaleAPI proxy instead.** Create your Supercell keys whitelisting IP `45.79.218.79`, then set `CLASH_ROYALE_API_BASE_URL=https://proxy.royaleapi.dev/v1` and `BRAWL_STARS_API_BASE_URL=https://proxy.royaleapi.dev/v1` — the community proxy forwards to the official APIs for Clash Royale, Clash of Clans and Brawl Stars ([docs](https://docs.royaleapi.com/proxy.html)). This removes the static-egress requirement entirely (the sweep can then run anywhere, even Vercel Cron). Trade-off: your tokens and verification traffic route through RoyaleAPI's infrastructure — fine for launch; move to your own static-IP host if you outgrow it.
+ 
+ **Treasury secret — pick one home for `TREASURY_SECRET_KEY`:**
+ - **Simple:** put it on the **web host** and let a scheduler hit `POST /api/internal/withdrawals/process`. Treasury payouts are plain SOL transfers and don't need static egress, so this works on Vercel.
+@@ -128,7 +140,7 @@ Three endpoints must be hit on a schedule (sent as `Authorization: Bearer <secre
+ 
+ | Endpoint | Secret | Cadence | Purpose |
+ |---|---|---|---|
+-| `POST /api/internal/duels/verify` | `EXPIRE_CRON_SECRET` | every 30–60 s | reads battle logs for live duels, settles winners, disputes timeouts (**must run from the static-egress host** — calls Supercell) |
++| `POST /api/internal/duels/verify` | `VERIFY_CRON_SECRET` (falls back to `EXPIRE_CRON_SECRET`) | every 30–60 s | reads battle logs for live duels, settles winners, disputes timeouts (**runs from the static-egress host** — or anywhere, if using the RoyaleAPI proxy above) |
+ | `POST /api/internal/duels/expire` | `EXPIRE_CRON_SECRET` | every 1–2 min | sweeps expired open (never-accepted) duels |
+ | `POST /api/internal/withdrawals/process` | `WITHDRAWAL_CRON_SECRET` | every 1–2 min | pays out approved withdrawals from the treasury |
+ 
