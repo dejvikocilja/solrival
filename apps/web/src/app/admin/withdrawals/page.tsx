@@ -163,7 +163,14 @@ const submitPayout = async () => {
         }
         if (r.status === "APPROVED") {
           return (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReview({ row: r, decision: "REJECT" })}
+                className="rounded-lg border border-danger/30 bg-danger/15 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/25"
+              >
+                Reject
+              </button>
               <button
                 type="button"
                 onClick={() => setPayout(r)}
@@ -190,7 +197,7 @@ const submitPayout = async () => {
 
       {/* Status filter */}
       <div className="flex items-center gap-3">
-        <div className="flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
+        <div className="inline-flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
           {STATUS_TABS.map((s) => (
             <button
               key={s}
@@ -200,7 +207,7 @@ const submitPayout = async () => {
                 setPage(1);
               }}
               className={[
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
                 status === s ? "bg-rival text-rival-fg" : "text-muted hover:text-fg",
               ].join(" ")}
             >

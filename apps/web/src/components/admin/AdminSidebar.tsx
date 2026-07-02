@@ -43,9 +43,8 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
           className="flex items-center gap-2 focus-visible:focus-ring rounded-md"
           onClick={onClose}
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rival text-rival-fg">
-            <Swords className="h-4 w-4" />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/solrival-emblem.png" alt="" width={28} height={28} className="h-7 w-7 shrink-0" />
           <span className="font-display text-[15px] font-semibold tracking-tight text-fg">
             Sol<span className="text-rival">Rival</span>
             <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted align-middle">

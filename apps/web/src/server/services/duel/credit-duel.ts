@@ -5,6 +5,14 @@ import { isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/sh
 import { applyEntry, lockBalances, CreditError } from "../credits/balance";
 import { toDuelSummary, DuelError } from "./service";
 import { DuelConflictError } from "./repo";
+import {
+  publishDuelAccepted,
+  publishDuelExpired,
+  publishRewardPaid,
+} from "@/lib/realtime/event-publisher";
+
+const LAMPORTS_PER_SOL = 1_000_000_000;
+const toSol = (lamports: bigint) => Number(lamports) / LAMPORTS_PER_SOL;
 
 /**
  * Credit-based duel flow (custodial GGDUEL balance).
@@ -161,6 +169,23 @@ export async function acceptCreditDuel(user: User, duel: Duel, friendLink: strin
   }
 
   const updated = await prisma.duel.findUniqueOrThrow({ where: { id: duel.id } });
+
+  // Notify the creator their challenge was taken (after the tx commits, so a
+  // rolled-back accept can never emit). The challenger doesn't need an event —
+  // they performed the action and get direct UI feedback.
+  const creator = await prisma.user.findUnique({
+    where: { id: duel.creatorId },
+    select: { username: true },
+  });
+  publishDuelAccepted({
+    duelId: duel.id,
+    creatorTag: creator?.username ?? "player",
+    challengerTag: user.username,
+    gameId: duel.game,
+    stakeSol: toSol(duel.stakeLamports),
+    targetUserId: duel.creatorId,
+  });
+
   return { duel: toDuelSummary(updated), economics: creditEconomics(duel.stakeLamports) };
 }
 
@@ -221,6 +246,20 @@ export async function expireCreditDuel(duel: Duel): Promise<void> {
       duelId: duel.id,
       memo: "Stake returned (duel expired)",
     });
+  });
+
+  // Tell the creator their stake is back (post-commit; sweep-driven, so this is
+  // often the only signal they get that the challenge lapsed).
+  const creator = await prisma.user.findUnique({
+    where: { id: duel.creatorId },
+    select: { username: true },
+  });
+  publishDuelExpired({
+    duelId: duel.id,
+    creatorTag: creator?.username ?? "player",
+    challengerTag: null,
+    refundedSol: toSol(duel.stakeLamports),
+    targetUserId: duel.creatorId,
   });
 }
 
@@ -286,6 +325,18 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
 
     await tx.user.update({ where: { id: winnerId }, data: { wins: { increment: 1 } } });
     await tx.user.update({ where: { id: loserId }, data: { losses: { increment: 1 } } });
+  });
+
+  // Payout notification for the winner (post-commit, so it can never fire for a
+  // settlement that rolled back). Idempotent settlement returns early above, so
+  // a re-run can't double-notify either.
+  const winner = await prisma.user.findUnique({ where: { id: winnerId }, select: { username: true } });
+  publishRewardPaid({
+    duelId,
+    winnerTag: winner?.username ?? "player",
+    amountSol: toSol(reward),
+    feeSol: toSol(rake),
+    targetUserId: winnerId,
   });
 
   return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });

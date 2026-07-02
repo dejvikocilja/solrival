@@ -10,6 +10,13 @@ export interface GameSplitDatum {
   color: string;
 }
 
+/** 12345 → "12.3k" so the donut's center total can never outgrow the hole. */
+function compact(n: number): string {
+  return n >= 10_000
+    ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n)
+    : n.toLocaleString();
+}
+
 export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
   const total = data.reduce((sum, d) => sum + d.matches, 0);
 
@@ -22,8 +29,8 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
   }
 
   return (
-    <div className="flex flex-col items-center gap-5 sm:flex-row sm:gap-6">
-      <div className="relative h-40 w-40 shrink-0">
+    <div className="flex flex-col items-center gap-6 sm:flex-row sm:gap-10">
+      <div className="relative h-44 w-44 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -32,9 +39,9 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
               nameKey="game"
               cx="50%"
               cy="50%"
-              innerRadius={52}
-              outerRadius={72}
-              paddingAngle={2}
+              innerRadius={60}
+              outerRadius={78}
+              paddingAngle={data.length > 1 ? 2 : 0}
               stroke="hsl(var(--bg))"
               strokeWidth={2}
             >
@@ -55,28 +62,32 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
             />
           </PieChart>
         </ResponsiveContainer>
-        {/* Center total */}
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-heading-2 tabular text-fg">{total.toLocaleString()}</span>
+        {/* Center total — compact-formatted and sized to always fit the hole. */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+          <span className="font-display text-heading-3 tabular text-fg">{compact(total)}</span>
           <span className="text-caption text-faint">matches</span>
         </div>
       </div>
 
-      <ul className="w-full space-y-2.5">
+      {/* Legend: everything about a game reads on one line, left-aligned next to
+          its dot — no detached numbers floating at the card's far edge. */}
+      <ul className="w-full max-w-xs space-y-3">
         {data.map((entry) => {
           const pct = total > 0 ? Math.round((entry.matches / total) * 100) : 0;
           return (
-            <li key={entry.game} className="flex items-center gap-2.5">
+            <li key={entry.game} className="flex items-center gap-3">
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ backgroundColor: entry.color }}
                 aria-hidden
               />
-              <span className="text-body-sm text-muted">{entry.game}</span>
-              <span className="ml-auto font-mono tabular text-body-sm text-fg">
-                {entry.matches.toLocaleString()}
-              </span>
-              <span className="w-10 text-right font-mono tabular text-caption text-faint">{pct}%</span>
+              <div className="min-w-0">
+                <p className="text-body-sm font-medium text-fg">{entry.game}</p>
+                <p className="text-caption text-muted">
+                  <span className="font-mono tabular text-fg">{entry.matches.toLocaleString()}</span>{" "}
+                  matches · <span className="font-mono tabular">{pct}%</span> of total
+                </p>
+              </div>
             </li>
           );
         })}

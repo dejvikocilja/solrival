@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, ShieldCheck, Swords } from "lucide-react";
+import { ArrowLeft, ArrowRight, Flag, ShieldCheck, Swords } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { ExpiryMeter } from "@/components/marketplace/expiry-meter";
 import { GAME_META } from "@/components/marketplace/game-meta";
 import { RULE_META } from "@/components/duel/rule-meta";
 import { AcceptDuelModal } from "@/components/duel/accept-duel-modal";
+import { DisputeDuelModal } from "@/components/duel/dispute-duel-modal";
 import { getDuel, type DuelDetail, type DuelStatus } from "@/lib/api/duels";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +45,7 @@ function shortWallet(addr: string): string {
 export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: string }) {
   const { user } = useAuth();
   const [accepting, setAccepting] = React.useState(false);
+  const [disputing, setDisputing] = React.useState(false);
 
   const query = useQuery({
     queryKey: ["duel", id],
@@ -98,6 +100,10 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
   const isParticipant = isCreator || (!!user && user.id === duel.opponent?.id);
   const isOpen = duel.status === "WAITING_FOR_OPPONENT";
   const canAccept = isOpen && !isCreator;
+  // Participants can raise a dispute while the match is live or being verified
+  // (mirrors the server-side state machine; COMPLETED is not disputable).
+  const canDispute =
+    isParticipant && (duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING");
 
   // For a finished duel, show the viewer's own result in place of the generic
   // "Completed" badge: Win (green) or Loss (red). Non-participants still see status.
@@ -182,8 +188,24 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
             <p className="rounded-md border border-border bg-surface-2/60 px-4 py-3 text-center text-body-sm text-muted">
               {duel.status === "EXPIRED" || duel.status === "CANCELLED"
                 ? "This challenge is closed. Browse the marketplace for open duels."
-                : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
+                : duel.status === "DISPUTED"
+                  ? "This duel is under dispute. Settlement is frozen while our team reviews the match — you'll be notified of the outcome."
+                  : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
             </p>
+          ) : null}
+
+          {/* dispute affordance — quiet by design; a problem report, not a primary action */}
+          {canDispute ? (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setDisputing(true)}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-faint transition-colors hover:text-ember focus-visible:focus-ring"
+              >
+                <Flag className="h-3.5 w-3.5" aria-hidden />
+                Something wrong with this match? Raise a dispute
+              </button>
+            </div>
           ) : null}
 
           {/* escrow assurance */}
@@ -204,6 +226,8 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
           }}
         />
       ) : null}
+
+      {disputing ? <DisputeDuelModal duelId={duel.id} onClose={() => setDisputing(false)} /> : null}
     </>
   );
 }

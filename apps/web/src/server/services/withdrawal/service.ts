@@ -237,8 +237,17 @@ export async function reviewWithdrawal(
 ): Promise<WithdrawalRequest> {
   const w = await prisma.withdrawalRequest.findUnique({ where: { id: withdrawalId } });
   if (!w) throw new WithdrawalError("NOT_FOUND", "Withdrawal not found", 404);
-  if (w.status !== "PENDING_REVIEW") {
+
+  // APPROVE only from PENDING_REVIEW. REJECT also from APPROVED — the state
+  // machine allows it (payout not yet sent, funds still locked) so an admin can
+  // pull back an approval before the treasury worker picks it up. Once
+  // PROCESSING, it's on-chain and can no longer be rejected.
+  const rejectableFrom: readonly string[] = ["PENDING_REVIEW", "APPROVED"];
+  if (decision === "APPROVE" && w.status !== "PENDING_REVIEW") {
     throw new WithdrawalError("NOT_REVIEWABLE", "Withdrawal is not awaiting review", 409);
+  }
+  if (decision === "REJECT" && !rejectableFrom.includes(w.status)) {
+    throw new WithdrawalError("NOT_REVIEWABLE", "Withdrawal can no longer be rejected", 409);
   }
 
   if (decision === "APPROVE") {
@@ -261,7 +270,7 @@ export async function reviewWithdrawal(
     // Reject: revert the lock and close out.
     await prisma.$transaction(async (tx) => {
       const claimed = await tx.withdrawalRequest.updateMany({
-        where: { id: withdrawalId, status: "PENDING_REVIEW" },
+        where: { id: withdrawalId, status: { in: ["PENDING_REVIEW", "APPROVED"] } },
         data: {
           status: "REJECTED",
           reviewedByAdminId: admin.id,

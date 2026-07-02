@@ -1,0 +1,668 @@
+diff --git a/apps/web/src/app/admin/withdrawals/page.tsx b/apps/web/src/app/admin/withdrawals/page.tsx
+index cc42c20..afe104a 100644
+--- a/apps/web/src/app/admin/withdrawals/page.tsx
++++ b/apps/web/src/app/admin/withdrawals/page.tsx
+@@ -163,7 +163,14 @@ const submitPayout = async () => {
+         }
+         if (r.status === "APPROVED") {
+           return (
+-            <div className="flex justify-end">
++            <div className="flex justify-end gap-2">
++              <button
++                type="button"
++                onClick={() => setReview({ row: r, decision: "REJECT" })}
++                className="rounded-lg border border-danger/30 bg-danger/15 px-3 py-1.5 text-xs font-medium text-danger hover:bg-danger/25"
++              >
++                Reject
++              </button>
+               <button
+                 type="button"
+                 onClick={() => setPayout(r)}
+@@ -190,7 +197,7 @@ const submitPayout = async () => {
+ 
+       {/* Status filter */}
+       <div className="flex items-center gap-3">
+-        <div className="flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
++        <div className="inline-flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
+           {STATUS_TABS.map((s) => (
+             <button
+               key={s}
+@@ -200,7 +207,7 @@ const submitPayout = async () => {
+                 setPage(1);
+               }}
+               className={[
+-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
++                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                 status === s ? "bg-rival text-rival-fg" : "text-muted hover:text-fg",
+               ].join(" ")}
+             >
+diff --git a/apps/web/src/app/api/duels/[duelId]/dispute/route.ts b/apps/web/src/app/api/duels/[duelId]/dispute/route.ts
+new file mode 100644
+index 0000000..3028870
+--- /dev/null
++++ b/apps/web/src/app/api/duels/[duelId]/dispute/route.ts
+@@ -0,0 +1,37 @@
++import { type NextRequest } from "next/server";
++import { z } from "zod";
++import { requireUser } from "@/server/auth/session";
++import { assertSameOrigin } from "@/server/guards/origin";
++import { findDuelById, DuelNotFoundError } from "@/server/services/duel/repo";
++import { raiseDispute } from "@/server/services/dispute/service";
++import { handle, ok } from "@/server/http/respond";
++
++export const runtime = "nodejs";
++
++const raiseDisputeSchema = z.object({
++  reason: z
++    .string()
++    .trim()
++    .min(10, "Please describe the problem in at least 10 characters")
++    .max(500, "Keep the description under 500 characters"),
++});
++
++/**
++ * POST /api/duels/:duelId/dispute — a participant reports a problem with a live
++ * or verifying duel. Freezes settlement (status → DISPUTED) until an admin
++ * resolves it as a win or a refund. One dispute per duel.
++ */
++export async function POST(req: NextRequest, { params }: { params: Promise<{ duelId: string }> }) {
++  return handle(async () => {
++    assertSameOrigin(req);
++    const user = await requireUser();
++    const { duelId } = await params;
++    const { reason } = raiseDisputeSchema.parse(await req.json());
++
++    const duel = await findDuelById(duelId);
++    if (!duel) throw new DuelNotFoundError();
++
++    await raiseDispute(user, duel, reason);
++    return ok({ disputed: true });
++  });
++}
+diff --git a/apps/web/src/components/admin/AdminSidebar.tsx b/apps/web/src/components/admin/AdminSidebar.tsx
+index b06f368..0d89013 100644
+--- a/apps/web/src/components/admin/AdminSidebar.tsx
++++ b/apps/web/src/components/admin/AdminSidebar.tsx
+@@ -43,9 +43,8 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
+           className="flex items-center gap-2 focus-visible:focus-ring rounded-md"
+           onClick={onClose}
+         >
+-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rival text-rival-fg">
+-            <Swords className="h-4 w-4" />
+-          </span>
++          {/* eslint-disable-next-line @next/next/no-img-element */}
++          <img src="/solrival-emblem.png" alt="" width={28} height={28} className="h-7 w-7 shrink-0" />
+           <span className="font-display text-[15px] font-semibold tracking-tight text-fg">
+             Sol<span className="text-rival">Rival</span>
+             <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted align-middle">
+diff --git a/apps/web/src/components/admin/analytics/GameSplitChart.tsx b/apps/web/src/components/admin/analytics/GameSplitChart.tsx
+index 468d799..354da63 100644
+--- a/apps/web/src/components/admin/analytics/GameSplitChart.tsx
++++ b/apps/web/src/components/admin/analytics/GameSplitChart.tsx
+@@ -10,6 +10,13 @@ export interface GameSplitDatum {
+   color: string;
+ }
+ 
++/** 12345 → "12.3k" so the donut's center total can never outgrow the hole. */
++function compact(n: number): string {
++  return n >= 10_000
++    ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n)
++    : n.toLocaleString();
++}
++
+ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
+   const total = data.reduce((sum, d) => sum + d.matches, 0);
+ 
+@@ -22,8 +29,8 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
+   }
+ 
+   return (
+-    <div className="flex flex-col items-center gap-5 sm:flex-row sm:gap-6">
+-      <div className="relative h-40 w-40 shrink-0">
++    <div className="flex flex-col items-center gap-6 sm:flex-row sm:gap-10">
++      <div className="relative h-44 w-44 shrink-0">
+         <ResponsiveContainer width="100%" height="100%">
+           <PieChart>
+             <Pie
+@@ -32,9 +39,9 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
+               nameKey="game"
+               cx="50%"
+               cy="50%"
+-              innerRadius={52}
+-              outerRadius={72}
+-              paddingAngle={2}
++              innerRadius={60}
++              outerRadius={78}
++              paddingAngle={data.length > 1 ? 2 : 0}
+               stroke="hsl(var(--bg))"
+               strokeWidth={2}
+             >
+@@ -55,28 +62,32 @@ export function GameSplitChart({ data }: { data: GameSplitDatum[] }) {
+             />
+           </PieChart>
+         </ResponsiveContainer>
+-        {/* Center total */}
+-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+-          <span className="font-display text-heading-2 tabular text-fg">{total.toLocaleString()}</span>
++        {/* Center total — compact-formatted and sized to always fit the hole. */}
++        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
++          <span className="font-display text-heading-3 tabular text-fg">{compact(total)}</span>
+           <span className="text-caption text-faint">matches</span>
+         </div>
+       </div>
+ 
+-      <ul className="w-full space-y-2.5">
++      {/* Legend: everything about a game reads on one line, left-aligned next to
++          its dot — no detached numbers floating at the card's far edge. */}
++      <ul className="w-full max-w-xs space-y-3">
+         {data.map((entry) => {
+           const pct = total > 0 ? Math.round((entry.matches / total) * 100) : 0;
+           return (
+-            <li key={entry.game} className="flex items-center gap-2.5">
++            <li key={entry.game} className="flex items-center gap-3">
+               <span
+                 className="h-2.5 w-2.5 shrink-0 rounded-full"
+                 style={{ backgroundColor: entry.color }}
+                 aria-hidden
+               />
+-              <span className="text-body-sm text-muted">{entry.game}</span>
+-              <span className="ml-auto font-mono tabular text-body-sm text-fg">
+-                {entry.matches.toLocaleString()}
+-              </span>
+-              <span className="w-10 text-right font-mono tabular text-caption text-faint">{pct}%</span>
++              <div className="min-w-0">
++                <p className="text-body-sm font-medium text-fg">{entry.game}</p>
++                <p className="text-caption text-muted">
++                  <span className="font-mono tabular text-fg">{entry.matches.toLocaleString()}</span>{" "}
++                  matches · <span className="font-mono tabular">{pct}%</span> of total
++                </p>
++              </div>
+             </li>
+           );
+         })}
+diff --git a/apps/web/src/components/duel/dispute-duel-modal.tsx b/apps/web/src/components/duel/dispute-duel-modal.tsx
+new file mode 100644
+index 0000000..4c653f5
+--- /dev/null
++++ b/apps/web/src/components/duel/dispute-duel-modal.tsx
+@@ -0,0 +1,136 @@
++"use client";
++
++import * as React from "react";
++import { useMutation, useQueryClient } from "@tanstack/react-query";
++import { toast } from "sonner";
++import { Flag, Loader2, X } from "lucide-react";
++import { Button } from "@/components/ui/button";
++import { FieldError } from "@/components/ui/field";
++import { disputeDuel } from "@/lib/api/duels";
++import { ApiError } from "@/lib/api/client";
++
++const MIN_REASON = 10;
++const MAX_REASON = 500;
++
++export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose: () => void }) {
++  const queryClient = useQueryClient();
++  const [reason, setReason] = React.useState("");
++  const [touched, setTouched] = React.useState(false);
++  const titleId = React.useId();
++
++  const trimmed = reason.trim();
++  const tooShort = trimmed.length < MIN_REASON;
++
++  const mutation = useMutation({
++    mutationFn: () => disputeDuel(duelId, trimmed),
++    onSuccess: () => {
++      toast.success("Dispute raised", {
++        description: "Settlement is frozen while our team reviews the match.",
++      });
++      void queryClient.invalidateQueries({ queryKey: ["duel", duelId] });
++      onClose();
++    },
++    onError: (err) => {
++      const msg =
++        err instanceof ApiError && err.status === 409
++          ? err.message
++          : "Couldn't raise the dispute. Please try again.";
++      toast.error(msg);
++    },
++  });
++
++  // Escape closes (unless mid-submit)
++  React.useEffect(() => {
++    const fn = (e: KeyboardEvent) => {
++      if (e.key === "Escape" && !mutation.isPending) onClose();
++    };
++    window.addEventListener("keydown", fn);
++    return () => window.removeEventListener("keydown", fn);
++  }, [mutation.isPending, onClose]);
++
++  function submit() {
++    setTouched(true);
++    if (tooShort || mutation.isPending) return;
++    mutation.mutate();
++  }
++
++  return (
++    <div
++      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm"
++      onClick={(e) => {
++        if (e.target === e.currentTarget && !mutation.isPending) onClose();
++      }}
++    >
++      <div
++        role="dialog"
++        aria-modal
++        aria-labelledby={titleId}
++        className="w-full max-w-md rounded-xl border border-border bg-bg-raised shadow-card-hover"
++      >
++        <div className="flex items-center justify-between border-b border-border px-5 py-4">
++          <h2 id={titleId} className="flex items-center gap-2 text-heading-3 text-fg">
++            <Flag className="h-4 w-4 text-ember" aria-hidden />
++            Report a problem
++          </h2>
++          <button
++            type="button"
++            aria-label="Close"
++            disabled={mutation.isPending}
++            onClick={onClose}
++            className="rounded-md p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring disabled:opacity-40"
++          >
++            <X className="h-4 w-4" aria-hidden />
++          </button>
++        </div>
++
++        <div className="space-y-4 px-5 py-5">
++          <p className="text-body-sm text-muted">
++            Raising a dispute freezes this duel — no one is paid until our team reviews the match
++            and resolves it as a win or a full refund. Only use this if something genuinely went
++            wrong (wrong result, opponent no-show, technical failure).
++          </p>
++
++          <div className="space-y-1.5">
++            <label htmlFor="dispute-reason" className="text-body-sm font-medium text-fg">
++              What happened?
++            </label>
++            <textarea
++              id="dispute-reason"
++              value={reason}
++              onChange={(e) => setReason(e.target.value.slice(0, MAX_REASON))}
++              onBlur={() => setTouched(true)}
++              rows={4}
++              placeholder="Describe the problem — include the match time and what you expected to happen."
++              className="w-full resize-none rounded-md border border-border-strong bg-surface px-3 py-2.5 text-body text-fg placeholder:text-faint outline-none transition-colors focus:border-rival/40 focus:ring-1 focus:ring-rival/40"
++            />
++            <div className="flex items-center justify-between">
++              {touched && tooShort ? (
++                <FieldError>At least {MIN_REASON} characters — a short sentence is enough.</FieldError>
++              ) : (
++                <span />
++              )}
++              <span className="text-caption tabular text-faint">
++                {trimmed.length}/{MAX_REASON}
++              </span>
++            </div>
++          </div>
++        </div>
++
++        <div className="flex gap-2.5 border-t border-border px-5 py-4">
++          <Button variant="secondary" className="flex-1" disabled={mutation.isPending} onClick={onClose}>
++            Cancel
++          </Button>
++          <Button
++            variant="danger"
++            className="flex-1"
++            disabled={mutation.isPending || (touched && tooShort)}
++            onClick={submit}
++          >
++            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
++            Raise dispute
++          </Button>
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/apps/web/src/components/duel/duel-detail-view.tsx b/apps/web/src/components/duel/duel-detail-view.tsx
+index 497a34b..9c34987 100644
+--- a/apps/web/src/components/duel/duel-detail-view.tsx
++++ b/apps/web/src/components/duel/duel-detail-view.tsx
+@@ -3,7 +3,7 @@
+ import * as React from "react";
+ import Link from "next/link";
+ import { useQuery } from "@tanstack/react-query";
+-import { ArrowLeft, ArrowRight, ShieldCheck, Swords } from "lucide-react";
++import { ArrowLeft, ArrowRight, Flag, ShieldCheck, Swords } from "lucide-react";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Badge, type BadgeProps } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+@@ -12,6 +12,7 @@ import { ExpiryMeter } from "@/components/marketplace/expiry-meter";
+ import { GAME_META } from "@/components/marketplace/game-meta";
+ import { RULE_META } from "@/components/duel/rule-meta";
+ import { AcceptDuelModal } from "@/components/duel/accept-duel-modal";
++import { DisputeDuelModal } from "@/components/duel/dispute-duel-modal";
+ import { getDuel, type DuelDetail, type DuelStatus } from "@/lib/api/duels";
+ import { ApiError } from "@/lib/api/client";
+ import { useAuth } from "@/hooks/use-auth";
+@@ -44,6 +45,7 @@ function shortWallet(addr: string): string {
+ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: string }) {
+   const { user } = useAuth();
+   const [accepting, setAccepting] = React.useState(false);
++  const [disputing, setDisputing] = React.useState(false);
+ 
+   const query = useQuery({
+     queryKey: ["duel", id],
+@@ -98,6 +100,10 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+   const isParticipant = isCreator || (!!user && user.id === duel.opponent?.id);
+   const isOpen = duel.status === "WAITING_FOR_OPPONENT";
+   const canAccept = isOpen && !isCreator;
++  // Participants can raise a dispute while the match is live or being verified
++  // (mirrors the server-side state machine; COMPLETED is not disputable).
++  const canDispute =
++    isParticipant && (duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING");
+ 
+   // For a finished duel, show the viewer's own result in place of the generic
+   // "Completed" badge: Win (green) or Loss (red). Non-participants still see status.
+@@ -182,10 +188,26 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+             <p className="rounded-md border border-border bg-surface-2/60 px-4 py-3 text-center text-body-sm text-muted">
+               {duel.status === "EXPIRED" || duel.status === "CANCELLED"
+                 ? "This challenge is closed. Browse the marketplace for open duels."
+-                : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
++                : duel.status === "DISPUTED"
++                  ? "This duel is under dispute. Settlement is frozen while our team reviews the match — you'll be notified of the outcome."
++                  : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
+             </p>
+           ) : null}
+ 
++          {/* dispute affordance — quiet by design; a problem report, not a primary action */}
++          {canDispute ? (
++            <div className="flex justify-center">
++              <button
++                type="button"
++                onClick={() => setDisputing(true)}
++                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-faint transition-colors hover:text-ember focus-visible:focus-ring"
++              >
++                <Flag className="h-3.5 w-3.5" aria-hidden />
++                Something wrong with this match? Raise a dispute
++              </button>
++            </div>
++          ) : null}
++
+           {/* escrow assurance */}
+           <div className="flex items-center gap-2 border-t border-border pt-4 text-caption text-faint">
+             <ShieldCheck className="h-4 w-4 shrink-0 text-victory" aria-hidden />
+@@ -204,6 +226,8 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+           }}
+         />
+       ) : null}
++
++      {disputing ? <DisputeDuelModal duelId={duel.id} onClose={() => setDisputing(false)} /> : null}
+     </>
+   );
+ }
+diff --git a/apps/web/src/components/site-header.tsx b/apps/web/src/components/site-header.tsx
+index 56bd4a7..fa2c1ea 100644
+--- a/apps/web/src/components/site-header.tsx
++++ b/apps/web/src/components/site-header.tsx
+@@ -1,11 +1,57 @@
++"use client";
++
++import * as React from "react";
+ import Link from "next/link";
+ import { buttonVariants } from "@/components/ui/button";
+ import { AuthControl } from "@/components/auth/auth-control";
+ import { cn } from "@/lib/utils";
+ 
++/**
++ * Tracks whether the page has scrolled past a small threshold, rAF-throttled.
++ * Drives the header's "merged with the page → distinct chrome" transition.
++ */
++function useScrolled(threshold = 12): boolean {
++  const [scrolled, setScrolled] = React.useState(false);
++
++  React.useEffect(() => {
++    let raf = 0;
++    const update = () => {
++      raf = 0;
++      setScrolled(window.scrollY > threshold);
++    };
++    const onScroll = () => {
++      if (raf === 0) raf = requestAnimationFrame(update);
++    };
++    update(); // initial position (e.g. reload mid-page)
++    window.addEventListener("scroll", onScroll, { passive: true });
++    return () => {
++      window.removeEventListener("scroll", onScroll);
++      if (raf) cancelAnimationFrame(raf);
++    };
++  }, [threshold]);
++
++  return scrolled;
++}
++
++/**
++ * At the top of a page the header is transparent — it reads as part of the
++ * page itself (the home hero especially). Once you scroll, it eases into
++ * distinct chrome: raised surface, hairline border, backdrop blur. The
++ * transition is pure CSS (fast, and disabled automatically by the global
++ * prefers-reduced-motion rule).
++ */
+ export function SiteHeader() {
++  const scrolled = useScrolled();
++
+   return (
+-    <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-xl">
++    <header
++      className={cn(
++        "sticky top-0 z-40 border-b transition-[background-color,border-color,box-shadow] duration-300",
++        scrolled
++          ? "border-border bg-bg/80 shadow-[0_1px_0_0_hsl(var(--border)),0_8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur-xl"
++          : "border-transparent bg-transparent",
++      )}
++    >
+       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
+         <Link href="/" className="flex items-center gap-2.5 rounded-md focus-visible:focus-ring" aria-label="SolRival home">
+           {/* eslint-disable-next-line @next/next/no-img-element */}
+diff --git a/apps/web/src/lib/api/duels.ts b/apps/web/src/lib/api/duels.ts
+index 0948c8e..6953de4 100644
+--- a/apps/web/src/lib/api/duels.ts
++++ b/apps/web/src/lib/api/duels.ts
+@@ -105,3 +105,8 @@ export function getDuel(id: string, inviteToken?: string | null): Promise<{ duel
+ export function acceptDuel(id: string, friendLink: string): Promise<unknown> {
+   return apiPost<unknown>(`/api/duels/${id}/accept`, { friendLink });
+ }
++
++/** Raises a dispute on a live/verifying duel — freezes settlement for admin review. */
++export function disputeDuel(id: string, reason: string): Promise<{ disputed: boolean }> {
++  return apiPost<{ disputed: boolean }>(`/api/duels/${id}/dispute`, { reason });
++}
+diff --git a/apps/web/src/server/services/dispute/service.ts b/apps/web/src/server/services/dispute/service.ts
+new file mode 100644
+index 0000000..56d00e4
+--- /dev/null
++++ b/apps/web/src/server/services/dispute/service.ts
+@@ -0,0 +1,69 @@
++import { prisma, type Duel, type User } from "@solrival/db";
++import { canTransition } from "@solrival/shared";
++import { DuelError } from "@/server/services/duel/service";
++
++/**
++ * Duel statuses a participant may dispute from. Mirrors the state machine
++ * (ACCEPTED/ACTIVE/VERIFYING → DISPUTED); COMPLETED is deliberately excluded —
++ * settled money has moved, so post-settlement complaints go to support, not the
++ * self-serve flow.
++ */
++const DISPUTABLE: ReadonlySet<string> = new Set(["ACCEPTED", "ACTIVE", "VERIFYING"]);
++
++/**
++ * Raises a dispute on a duel:
++ *  - caller must be a participant (creator or opponent)
++ *  - duel must be in a disputable status
++ *  - one dispute per duel (DB-unique on duelId)
++ *  - atomically: create the Dispute row AND move the duel to DISPUTED, with a
++ *    race guard so two concurrent raises (or a raise racing settlement) can
++ *    never double-apply.
++ *
++ * Settlement remains possible afterwards: the admin resolve flow settles or
++ * refunds from DISPUTED per the state machine.
++ */
++export async function raiseDispute(user: User, duel: Duel, reason: string): Promise<void> {
++  const isParticipant = duel.creatorId === user.id || duel.opponentId === user.id;
++  if (!isParticipant) throw new DuelError("FORBIDDEN", "Only duel participants can raise a dispute", 403);
++
++  if (!DISPUTABLE.has(duel.status)) {
++    throw new DuelError(
++      "NOT_DISPUTABLE",
++      duel.status === "DISPUTED"
++        ? "This duel is already under dispute"
++        : "This duel can no longer be disputed",
++      409,
++    );
++  }
++  // Defence-in-depth: never bypass the shared state machine.
++  if (!canTransition(duel.status as Parameters<typeof canTransition>[0], "DISPUTED")) {
++    throw new DuelError("NOT_DISPUTABLE", "This duel can no longer be disputed", 409);
++  }
++
++  try {
++    await prisma.$transaction(async (tx) => {
++      // Claim the transition first — if the duel already left `status` (settled,
++      // refunded, or disputed by the other player) this fails and we roll back.
++      const moved = await tx.duel.updateMany({
++        where: { id: duel.id, status: duel.status },
++        data: { status: "DISPUTED" },
++      });
++      if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++
++      await tx.dispute.create({
++        data: {
++          duelId: duel.id,
++          status: "OPEN",
++          reason,
++          raisedById: user.id,
++        },
++      });
++    });
++  } catch (e) {
++    // Unique violation on duelId: a dispute row already exists (e.g. system-raised).
++    if (typeof e === "object" && e !== null && "code" in e && (e as { code?: string }).code === "P2002") {
++      throw new DuelError("ALREADY_DISPUTED", "A dispute already exists for this duel", 409);
++    }
++    throw e;
++  }
++}
+diff --git a/apps/web/src/server/services/duel/credit-duel.ts b/apps/web/src/server/services/duel/credit-duel.ts
+index 4bb7000..0a6ef6b 100644
+--- a/apps/web/src/server/services/duel/credit-duel.ts
++++ b/apps/web/src/server/services/duel/credit-duel.ts
+@@ -5,6 +5,14 @@ import { isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/sh
+ import { applyEntry, lockBalances, CreditError } from "../credits/balance";
+ import { toDuelSummary, DuelError } from "./service";
+ import { DuelConflictError } from "./repo";
++import {
++  publishDuelAccepted,
++  publishDuelExpired,
++  publishRewardPaid,
++} from "@/lib/realtime/event-publisher";
++
++const LAMPORTS_PER_SOL = 1_000_000_000;
++const toSol = (lamports: bigint) => Number(lamports) / LAMPORTS_PER_SOL;
+ 
+ /**
+  * Credit-based duel flow (custodial GGDUEL balance).
+@@ -161,6 +169,23 @@ export async function acceptCreditDuel(user: User, duel: Duel, friendLink: strin
+   }
+ 
+   const updated = await prisma.duel.findUniqueOrThrow({ where: { id: duel.id } });
++
++  // Notify the creator their challenge was taken (after the tx commits, so a
++  // rolled-back accept can never emit). The challenger doesn't need an event —
++  // they performed the action and get direct UI feedback.
++  const creator = await prisma.user.findUnique({
++    where: { id: duel.creatorId },
++    select: { username: true },
++  });
++  publishDuelAccepted({
++    duelId: duel.id,
++    creatorTag: creator?.username ?? "player",
++    challengerTag: user.username,
++    gameId: duel.game,
++    stakeSol: toSol(duel.stakeLamports),
++    targetUserId: duel.creatorId,
++  });
++
+   return { duel: toDuelSummary(updated), economics: creditEconomics(duel.stakeLamports) };
+ }
+ 
+@@ -222,6 +247,20 @@ export async function expireCreditDuel(duel: Duel): Promise<void> {
+       memo: "Stake returned (duel expired)",
+     });
+   });
++
++  // Tell the creator their stake is back (post-commit; sweep-driven, so this is
++  // often the only signal they get that the challenge lapsed).
++  const creator = await prisma.user.findUnique({
++    where: { id: duel.creatorId },
++    select: { username: true },
++  });
++  publishDuelExpired({
++    duelId: duel.id,
++    creatorTag: creator?.username ?? "player",
++    challengerTag: null,
++    refundedSol: toSol(duel.stakeLamports),
++    targetUserId: duel.creatorId,
++  });
+ }
+ 
+ // ─── Settle (winner takes the whole pot) ─────────────────────────────────────
+@@ -288,6 +327,18 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
+     await tx.user.update({ where: { id: loserId }, data: { losses: { increment: 1 } } });
+   });
+ 
++  // Payout notification for the winner (post-commit, so it can never fire for a
++  // settlement that rolled back). Idempotent settlement returns early above, so
++  // a re-run can't double-notify either.
++  const winner = await prisma.user.findUnique({ where: { id: winnerId }, select: { username: true } });
++  publishRewardPaid({
++    duelId,
++    winnerTag: winner?.username ?? "player",
++    amountSol: toSol(reward),
++    feeSol: toSol(rake),
++    targetUserId: winnerId,
++  });
++
+   return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+ }
+ 
+diff --git a/apps/web/src/server/services/withdrawal/service.ts b/apps/web/src/server/services/withdrawal/service.ts
+index 86f9f93..5a8980e 100644
+--- a/apps/web/src/server/services/withdrawal/service.ts
++++ b/apps/web/src/server/services/withdrawal/service.ts
+@@ -237,9 +237,18 @@ export async function reviewWithdrawal(
+ ): Promise<WithdrawalRequest> {
+   const w = await prisma.withdrawalRequest.findUnique({ where: { id: withdrawalId } });
+   if (!w) throw new WithdrawalError("NOT_FOUND", "Withdrawal not found", 404);
+-  if (w.status !== "PENDING_REVIEW") {
++
++  // APPROVE only from PENDING_REVIEW. REJECT also from APPROVED — the state
++  // machine allows it (payout not yet sent, funds still locked) so an admin can
++  // pull back an approval before the treasury worker picks it up. Once
++  // PROCESSING, it's on-chain and can no longer be rejected.
++  const rejectableFrom: readonly string[] = ["PENDING_REVIEW", "APPROVED"];
++  if (decision === "APPROVE" && w.status !== "PENDING_REVIEW") {
+     throw new WithdrawalError("NOT_REVIEWABLE", "Withdrawal is not awaiting review", 409);
+   }
++  if (decision === "REJECT" && !rejectableFrom.includes(w.status)) {
++    throw new WithdrawalError("NOT_REVIEWABLE", "Withdrawal can no longer be rejected", 409);
++  }
+ 
+   if (decision === "APPROVE") {
+     const ok = await transition(withdrawalId, "PENDING_REVIEW", "APPROVED", {
+@@ -261,7 +270,7 @@ export async function reviewWithdrawal(
+     // Reject: revert the lock and close out.
+     await prisma.$transaction(async (tx) => {
+       const claimed = await tx.withdrawalRequest.updateMany({
+-        where: { id: withdrawalId, status: "PENDING_REVIEW" },
++        where: { id: withdrawalId, status: { in: ["PENDING_REVIEW", "APPROVED"] } },
+         data: {
+           status: "REJECTED",
+           reviewedByAdminId: admin.id,

@@ -105,3 +105,8 @@ export function getDuel(id: string, inviteToken?: string | null): Promise<{ duel
 export function acceptDuel(id: string, friendLink: string): Promise<unknown> {
   return apiPost<unknown>(`/api/duels/${id}/accept`, { friendLink });
 }
+
+/** Raises a dispute on a live/verifying duel — freezes settlement for admin review. */
+export function disputeDuel(id: string, reason: string): Promise<{ disputed: boolean }> {
+  return apiPost<{ disputed: boolean }>(`/api/duels/${id}/dispute`, { reason });
+}
