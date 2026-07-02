@@ -36,26 +36,8 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
 
   const sidebar = (
     <aside className="flex h-full w-60 flex-col border-r border-border bg-bg">
-      {/* Logo */}
-      <div className="flex h-14 flex-shrink-0 items-center gap-2.5 border-b border-border px-5">
-        <Link
-          href="/admin/analytics"
-          className="flex items-center gap-2 focus-visible:focus-ring rounded-md"
-          onClick={onClose}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/solrival-emblem.png" alt="" width={28} height={28} className="h-7 w-7 shrink-0" />
-          <span className="font-display text-[15px] font-semibold tracking-tight text-fg">
-            Sol<span className="text-rival">Rival</span>
-            <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted align-middle">
-              Admin
-            </span>
-          </span>
-        </Link>
-      </div>
-
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto p-3">
+      <nav className="flex-1 overflow-y-auto p-3 pt-5">
         <ul className="space-y-0.5" role="list">
           {NAV.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/")

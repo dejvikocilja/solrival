@@ -127,7 +127,9 @@ const submitPayout = async () => {
       header: "Status",
       render: (r) => (
         <div className="flex flex-col gap-1">
-          <StatusBadge status={r.status} />
+          {/* Compact variant: withdrawal rows are dense, so the status pill is
+              one step smaller here than the default table badge. */}
+          <StatusBadge status={r.status} className="self-start px-2 py-0 text-[11px] leading-4" />
           {r.heldReason ? <span className="text-xs text-ember/80">{r.heldReason}</span> : null}
         </div>
       ),
@@ -197,7 +199,7 @@ const submitPayout = async () => {
 
       {/* Status filter */}
       <div className="flex items-center gap-3">
-        <div className="inline-flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
+        <div className="flex flex-wrap rounded-lg border border-border bg-surface/60 p-0.5">
           {STATUS_TABS.map((s) => (
             <button
               key={s}
@@ -207,7 +209,7 @@ const submitPayout = async () => {
                 setPage(1);
               }}
               className={[
-                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 status === s ? "bg-rival text-rival-fg" : "text-muted hover:text-fg",
               ].join(" ")}
             >
