@@ -5,6 +5,7 @@ import { RootErrorBoundary } from "@/components/providers/root-error-boundary";
 import { SiteHeader } from "@/components/site-header";
 import { SkipLink } from "@/components/skip-link";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
+import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div id="main-content" tabIndex={-1} className="outline-none">
               {children}
             </div>
+            <SiteFooter />
             <MobileTabBar />
           </AppProviders>
         </RootErrorBoundary>

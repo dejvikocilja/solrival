@@ -2,39 +2,49 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDown, Copy, LogOut, Settings, Swords, User, Wallet as WalletIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BalancePill } from "@/components/credits/balance-pill";
 import { NotificationsMenu } from "@/components/notifications/notifications-menu";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthGate } from "@/hooks/use-auth-gate";
 import { cn } from "@/lib/utils";
 
 function shortAddress(addr: string): string {
   return addr.length > 8 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
 }
 
+/** Routes that require a session — leaving them on sign-out returns the user home. */
+const PROTECTED_PATHS = ["/wallet", "/settings", "/notifications", "/profile", "/admin"];
+function isProtectedPath(pathname: string): boolean {
+  if (pathname === "/duels" || pathname === "/duels/create") return true; // duel detail stays public
+  return PROTECTED_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 /**
- * The single persistent auth entry point in the header. Drives the whole flow:
- * connect wallet → sign in with Solana → show the account (address, balance,
- * sign out). Works from any page because the auth state is shared via context.
+ * The single persistent auth entry point in the header.
+ *
+ * Connect + sign-in are ONE action from the user's perspective: the button
+ * arms the auth gate, which carries the click through wallet connection and
+ * the SIWS signature without requiring a second press. (They remain two steps
+ * under the hood because they prove different things — connection is a local
+ * wallet-adapter link, the signature is cryptographic proof of key ownership
+ * that mints the server session — but the user never has to know that.)
  */
 export function AuthControl() {
-  const { connected } = useWallet();
-  const { setVisible } = useWalletModal();
-  const { status, user, signIn, signOut, error } = useAuth();
+  const { status, user, signOut } = useAuth();
+  const gate = useAuthGate();
+  const router = useRouter();
+  const pathname = usePathname();
 
-  // Surface sign-in failures (e.g. user rejected the signature) once each.
-  const lastError = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    if (error && error !== lastError.current) {
-      lastError.current = error;
-      toast.error(error);
-    }
-    if (!error) lastError.current = null;
-  }, [error]);
+  // Sign-out from a session-only page returns the user home — the page's
+  // content no longer exists for them.
+  const handleSignOut = React.useCallback(async () => {
+    await signOut();
+    if (isProtectedPath(pathname ?? "")) router.replace("/");
+  }, [signOut, pathname, router]);
 
   // Initial session hydration — keep the layout stable with a quiet placeholder.
   if (status === "loading") {
@@ -42,31 +52,21 @@ export function AuthControl() {
   }
 
   if (status === "authenticated" && user) {
-    return <AccountMenu address={user.walletAddress} username={user.username} onSignOut={signOut} />;
+    return <AccountMenu address={user.walletAddress} username={user.username} onSignOut={handleSignOut} />;
   }
 
-  if (status === "signing") {
-    return (
-      <Button size="sm" disabled>
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Signing in…
-      </Button>
-    );
-  }
-
-  // Connected wallet but no session yet — one tap to sign the SIWS message.
-  if (connected) {
-    return (
-      <Button size="sm" onClick={() => void signIn()}>
-        Sign in
-      </Button>
-    );
-  }
+  const label = gate.busy
+    ? status === "signing"
+      ? "Signing in…"
+      : "Connecting…"
+    : gate.connected
+      ? "Sign in"
+      : "Connect wallet";
 
   return (
-    <Button size="sm" onClick={() => setVisible(true)}>
-      <WalletIcon className="h-4 w-4" />
-      Connect wallet
+    <Button size="sm" disabled={gate.busy} onClick={() => gate.run(() => {})}>
+      {gate.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <WalletIcon className="h-4 w-4" />}
+      {label}
     </Button>
   );
 }
