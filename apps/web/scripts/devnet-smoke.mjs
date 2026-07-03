@@ -19,7 +19,9 @@
  * disputes safely at the verification timeout.
  *
  * Usage:
- *   pnpm --filter @solrival/web smoke            # against http://localhost:3000
+ *   pnpm --filter web smoke        # reads apps/web/.env.local automatically —
+ *                                  # cron secrets, RPC and TREASURY_SECRET_KEY
+ *                                  # (used as the devnet funder) all come from there
  *   APP_URL=https://staging.example.com \
  *   SMOKE_FUNDER_SECRET=<base58-or-json-array> \
  *   pnpm --filter @solrival/web smoke
@@ -45,18 +47,55 @@ import {
 } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+// ─── Env autoload ─────────────────────────────────────────────────────────────
+// Load apps/web/.env.local then .env (without overriding vars already set), so
+// `pnpm --filter web smoke` picks up cron secrets, RPC and the treasury key
+// exactly as the dev server does.
+const appDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+for (const file of [".env.local", ".env"]) {
+  try {
+    for (const line of readFileSync(join(appDir, file), "utf8").split("\n")) {
+      const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!m || line.trim().startsWith("#")) continue;
+      const [, key, rawVal] = m;
+      if (process.env[key] !== undefined) continue;
+      process.env[key] = rawVal.replace(/^(['"])(.*)\1$/, "$2");
+    }
+  } catch {
+    /* file absent — fine */
+  }
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const APP_URL = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? clusterApiUrl("devnet");
+const CLUSTER = process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet";
+
+// Hard safety stop: this script moves SOL from a funder key and creates real
+// platform state. It must never run against mainnet.
+if (CLUSTER.includes("mainnet") || RPC_URL.includes("mainnet")) {
+  console.error("REFUSING TO RUN: RPC/cluster points at mainnet. The smoke test is devnet-only.");
+  process.exit(1);
+}
+
 const STAKE_SOL = Number(process.env.SMOKE_STAKE_SOL ?? "0.005");
 const STAKE_LAMPORTS = BigInt(Math.round(STAKE_SOL * LAMPORTS_PER_SOL));
 const DEPOSIT_SOL = 0.06; // covers stake + withdrawal minimum (0.01) + margin
 const VERIFY_SECRET = process.env.VERIFY_CRON_SECRET ?? process.env.EXPIRE_CRON_SECRET ?? "";
 const WITHDRAWAL_SECRET = process.env.WITHDRAWAL_CRON_SECRET ?? "";
+// Funder preference: explicit smoke funder → the devnet treasury key from .env
+// (already funded; recycles SOL through the platform) → public airdrop faucet.
+const FUNDER_RAW = process.env.SMOKE_FUNDER_SECRET ?? process.env.TREASURY_SECRET_KEY ?? "";
 
 const connection = new Connection(RPC_URL, "confirmed");
+
+/** Ephemeral wallets created during the run — recycled back to the funder at the end. */
+const smokeWallets = [];
 
 // ─── Reporting ────────────────────────────────────────────────────────────────
 
@@ -151,9 +190,8 @@ function parseSecretKey(raw) {
 }
 
 async function fund(recipient, sol) {
-  const funderRaw = process.env.SMOKE_FUNDER_SECRET;
-  if (funderRaw) {
-    const funder = parseSecretKey(funderRaw);
+  if (FUNDER_RAW) {
+    const funder = parseSecretKey(FUNDER_RAW);
     const tx = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: funder.publicKey,
@@ -179,7 +217,8 @@ async function fund(recipient, sol) {
   }
   throw new Error(
     `Airdrop failed after 3 attempts (${lastErr?.message ?? lastErr}). ` +
-      `Fund ${recipient.toBase58()} manually, or set SMOKE_FUNDER_SECRET to a pre-funded devnet key.`,
+      `Get devnet SOL at https://faucet.solana.com into any wallet and set SMOKE_FUNDER_SECRET, ` +
+      `or set TREASURY_SECRET_KEY in apps/web/.env.local (auto-detected).`,
   );
 }
 
@@ -253,6 +292,7 @@ async function main() {
   step("2 · Fund two ephemeral devnet wallets");
   const alice = Keypair.generate();
   const bob = Keypair.generate();
+  smokeWallets.push(alice, bob);
   console.log(`  A: ${alice.publicKey.toBase58()}\n  B: ${bob.publicKey.toBase58()}`);
   try {
     await fund(alice.publicKey, DEPOSIT_SOL + 0.01);
@@ -407,7 +447,32 @@ async function main() {
   return finish();
 }
 
-function finish() {
+/** Returns each ephemeral wallet's leftover SOL to the funder — devnet faucets
+ *  are scarce, so the run recycles everything it can (best-effort). */
+async function sweepBack() {
+  if (!FUNDER_RAW || smokeWallets.length === 0) return;
+  const funder = parseSecretKey(FUNDER_RAW).publicKey;
+  const FEE = 5_000; // lamports, single-signature transfer
+  for (const kp of smokeWallets) {
+    try {
+      const balance = await connection.getBalance(kp.publicKey, "confirmed");
+      if (balance <= FEE) continue;
+      const tx = new Transaction().add(
+        SystemProgram.transfer({ fromPubkey: kp.publicKey, toPubkey: funder, lamports: balance - FEE }),
+      );
+      await sendAndConfirmTransaction(connection, tx, [kp], { commitment: "confirmed" });
+      console.log(`  recycled ${(balance - FEE) / LAMPORTS_PER_SOL} SOL from ${kp.publicKey.toBase58().slice(0, 6)}…`);
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
+async function finish() {
+  if (smokeWallets.length > 0 && FUNDER_RAW) {
+    console.log("\n▸ Recycling leftover devnet SOL back to the funder");
+    await sweepBack();
+  }
   console.log("\n──── Summary ────");
   for (const r of results) {
     console.log(`  ${r.status.padEnd(4)} ${r.name}${r.note ? ` — ${r.note}` : ""}`);

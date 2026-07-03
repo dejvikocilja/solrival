@@ -1,6 +1,7 @@
 import "server-only";
 import { computeSettlement } from "@solrival/sdk";
 import { listUserDuels } from "./repo";
+import { expireIfLapsed } from "./service";
 
 function shortenWallet(addr: string): string {
   return addr.length > 8 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
@@ -30,7 +31,16 @@ export type MyDuel = {
 
 /** Every duel the user created or accepted, newest first, with economics + outcome. */
 export async function getMyDuels(userId: string): Promise<{ duels: MyDuel[] }> {
-  const rows = await listUserDuels(userId);
+  let rows = await listUserDuels(userId);
+
+  // Lapsed open challenges expire (refunding the stake) the moment the owner
+  // looks at their list — the cron sweep remains the backstop.
+  const lapsed = [];
+  for (const d of rows) {
+    if (await expireIfLapsed(d)) lapsed.push(d.id);
+  }
+  if (lapsed.length > 0) rows = await listUserDuels(userId);
+
   const duels: MyDuel[] = rows.map((d) => {
     const { pot, payout } = computeSettlement(d.stakeLamports, d.platformFeeBps);
     return {

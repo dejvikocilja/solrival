@@ -260,6 +260,49 @@ export async function startMatch(duelId: string) {
 }
 
 // ------------------------------------------------------------- expiry --------
+
+/** True when a duel sits past its acceptance window with no opponent. */
+function isLapsedOpenDuel(d: Duel): boolean {
+  return (
+    (d.status === "WAITING_FOR_OPPONENT" || d.status === "CREATED") &&
+    d.opponentId === null &&
+    d.expiresAt.getTime() <= Date.now()
+  );
+}
+
+/** Expires a single lapsed duel — refunding the creator's ledger stake for
+ *  credit duels, or flipping status for on-chain ones (SOL reclaimed by the
+ *  permissionless keeper). Race-guarded and idempotent via expireCreditDuel /
+ *  transitionStatus; throws DuelConflictError on a lost race. */
+async function expireOneDuel(d: Duel): Promise<{ refunded: boolean }> {
+  if (d.fundingMode === "CREDITS") {
+    // Credit duels hold the stake only in the ledger — release it here.
+    await expireCreditDuel(d);
+    return { refunded: true };
+  }
+  // On-chain duels: flip status; the locked SOL is reclaimed on-chain
+  // by the permissionless reclaim_expired keeper.
+  await transitionStatus(d.id, d.status, "EXPIRED");
+  return { refunded: false };
+}
+
+/**
+ * Opportunistic expiry: called from read paths (duel detail, my-duels) so a
+ * lapsed challenge refunds the moment anyone looks at it, instead of waiting
+ * for the next cron tick. The cron sweep remains the backstop for duels nobody
+ * revisits. Returns true if this call performed the expiry.
+ */
+export async function expireIfLapsed(d: Duel): Promise<boolean> {
+  if (!isLapsedOpenDuel(d)) return false;
+  try {
+    await expireOneDuel(d);
+    return true;
+  } catch (e) {
+    if (e instanceof DuelConflictError) return false; // sweep or a peer got there first
+    throw e;
+  }
+}
+
 /**
  * Sweeps pre-acceptance duels past their 30-minute window. CREATED -> EXPIRED
  * (no funds moved). WAITING_FOR_OPPONENT -> EXPIRED; the creator's stake remains
@@ -273,15 +316,8 @@ export async function expireDuels(): Promise<{ expired: number; refunded: number
   let refunded = 0;
   for (const d of rows) {
     try {
-      if (d.fundingMode === "CREDITS") {
-        // Credit duels hold the stake only in the ledger — release it here.
-        await expireCreditDuel(d);
-        refunded += 1;
-      } else {
-        // On-chain duels: flip status; the locked SOL is reclaimed on-chain
-        // by the permissionless reclaim_expired keeper.
-        await transitionStatus(d.id, d.status, "EXPIRED");
-      }
+      const r = await expireOneDuel(d);
+      if (r.refunded) refunded += 1;
       expired += 1;
     } catch (e) {
       if (!(e instanceof DuelConflictError)) throw e; // ignore lost races

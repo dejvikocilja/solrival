@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { getDuelDetail, DuelNotFoundError } from "@/server/services/duel/repo";
+import { expireIfLapsed } from "@/server/services/duel/service";
 import { getCurrentUser } from "@/server/auth/session";
 import { isValidUuid } from "@/server/guards/validate-uuid";
 import { handle, ok, fail } from "@/server/http/respond";
@@ -12,8 +13,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
     const { duelId } = await params;
     // M-001: validate UUID format before hitting Prisma (non-UUID → 404 not 500).
     if (!isValidUuid(duelId)) throw new DuelNotFoundError();
-    const duel = await getDuelDetail(duelId);
+    let duel = await getDuelDetail(duelId);
     if (!duel) return fail("DUEL_NOT_FOUND", "Duel not found", 404);
+
+    // A lapsed open challenge expires (and refunds the creator's stake) the
+    // moment anyone loads it — no waiting for the cron sweep.
+    if (await expireIfLapsed(duel)) {
+      duel = (await getDuelDetail(duelId)) ?? duel;
+    }
 
     // Private duels are only visible to participants or via the invite token.
     if (duel.visibility === "PRIVATE") {
