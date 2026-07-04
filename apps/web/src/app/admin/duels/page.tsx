@@ -181,7 +181,7 @@ export default function AdminDuelsPage() {
           <ActionButton
             label="Refund"
             onClick={() => setConfirmDuel({ id: d.id, action: "force-refund" })}
-            disabled={["COMPLETED", "CANCELLED", "REFUNDED"].includes(d.status)}
+            disabled={["COMPLETED", "CANCELLED", "REFUNDED", "EXPIRED"].includes(d.status)}
           />
         </div>
       ),
