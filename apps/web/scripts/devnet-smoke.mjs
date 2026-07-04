@@ -86,11 +86,13 @@ if (CLUSTER.includes("mainnet") || RPC_URL.includes("mainnet")) {
 const STAKE_SOL = Number(process.env.SMOKE_STAKE_SOL ?? "0.005");
 const STAKE_LAMPORTS = BigInt(Math.round(STAKE_SOL * LAMPORTS_PER_SOL));
 const DEPOSIT_SOL = 0.06; // covers stake + withdrawal minimum (0.01) + margin
-const VERIFY_SECRET = process.env.VERIFY_CRON_SECRET ?? process.env.EXPIRE_CRON_SECRET ?? "";
-const WITHDRAWAL_SECRET = process.env.WITHDRAWAL_CRON_SECRET ?? "";
+/** Empty-string env vars count as unset — `VAR=$UNSET_SHELL_VAR` passes "". */
+const nonEmpty = (v) => (v && v.trim().length > 0 ? v.trim() : undefined);
+const VERIFY_SECRET = nonEmpty(process.env.VERIFY_CRON_SECRET) ?? nonEmpty(process.env.EXPIRE_CRON_SECRET) ?? "";
+const WITHDRAWAL_SECRET = nonEmpty(process.env.WITHDRAWAL_CRON_SECRET) ?? "";
 // Funder preference: explicit smoke funder → the devnet treasury key from .env
 // (already funded; recycles SOL through the platform) → public airdrop faucet.
-const FUNDER_RAW = process.env.SMOKE_FUNDER_SECRET ?? process.env.TREASURY_SECRET_KEY ?? "";
+const FUNDER_RAW = nonEmpty(process.env.SMOKE_FUNDER_SECRET) ?? nonEmpty(process.env.TREASURY_SECRET_KEY) ?? "";
 
 const connection = new Connection(RPC_URL, "confirmed");
 
@@ -149,13 +151,14 @@ class ApiClient {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     this.#absorb(res);
+    const raw = await res.text();
     let json = null;
     try {
-      json = await res.json();
+      json = JSON.parse(raw);
     } catch {
-      /* non-JSON body */
+      /* non-JSON body — raw is preserved for diagnostics */
     }
-    return { status: res.status, json };
+    return { status: res.status, json, raw };
   }
 
   get(path) {
@@ -172,13 +175,14 @@ async function internal(path, secret) {
     method: "POST",
     headers: { authorization: `Bearer ${secret}` },
   });
+  const raw = await res.text();
   let json = null;
   try {
-    json = await res.json();
+    json = JSON.parse(raw);
   } catch {
-    /* ignore */
+    /* non-JSON body — raw preserved for diagnostics */
   }
-  return { status: res.status, json };
+  return { status: res.status, json, raw };
 }
 
 // ─── Solana helpers ───────────────────────────────────────────────────────────
@@ -239,10 +243,7 @@ async function transferFinalized(from, to, sol) {
 async function signIn(client, keypair) {
   const walletAddress = keypair.publicKey.toBase58();
   const nonceRes = await client.post("/api/auth/nonce", { walletAddress, provider: "PHANTOM" });
-  if (nonceRes.status !== 200) {
-    throw new Error(`nonce failed (${nonceRes.status}): ${JSON.stringify(nonceRes.json)}`);
-  }
-  const { nonce, message } = nonceRes.json.data ?? nonceRes.json;
+  const { nonce, message } = unwrap(expectOk(nonceRes, "POST /api/auth/nonce"));
   const signature = bs58.encode(
     nacl.sign.detached(new TextEncoder().encode(message), keypair.secretKey),
   );
@@ -252,10 +253,19 @@ async function signIn(client, keypair) {
     nonce,
     signature,
   });
-  if (verifyRes.status !== 200) {
-    throw new Error(`verify failed (${verifyRes.status}): ${JSON.stringify(verifyRes.json)}`);
+  return unwrap(expectOk(verifyRes, "POST /api/auth/verify")).user;
+}
+
+/** Throws a diagnosable error (status + body snippet) unless the status matches. */
+function expectOk(res, label, statuses = [200]) {
+  if (!statuses.includes(res.status)) {
+    const body = res.json ? JSON.stringify(res.json) : (res.raw ?? "").slice(0, 300);
+    throw new Error(`${label} → HTTP ${res.status}: ${body || "<empty body>"}`);
   }
-  return (verifyRes.json.data ?? verifyRes.json).user;
+  if (res.json === null) {
+    throw new Error(`${label} → HTTP ${res.status} returned non-JSON: ${(res.raw ?? "").slice(0, 300)}`);
+  }
+  return res.json;
 }
 
 // ─── Response unwrap (routes wrap payloads as { data }) ───────────────────────
@@ -264,8 +274,8 @@ const unwrap = (json) => json?.data ?? json;
 
 async function getBalance(client) {
   const res = await client.get("/api/balance");
-  if (res.status !== 200) throw new Error(`balance failed (${res.status})`);
-  const b = unwrap(res.json).balance ?? unwrap(res.json);
+  const json = expectOk(res, "GET /api/balance");
+  const b = unwrap(json).balance ?? unwrap(json);
   return {
     available: BigInt(b.availableLamports),
     locked: BigInt(b.lockedLamports),
@@ -321,7 +331,7 @@ async function main() {
   step("4 · Real on-chain deposits → credited balances");
   let treasury;
   try {
-    const cfg = unwrap((await A.get("/api/deposits")).json).config;
+    const cfg = unwrap(expectOk(await A.get("/api/deposits"), "GET /api/deposits")).config;
     treasury = new PublicKey(cfg.treasuryWallet);
     console.log(`  treasury: ${cfg.treasuryWallet} (fee ${cfg.depositFeeBps} bps)`);
     for (const [client, kp, label] of [
@@ -331,7 +341,7 @@ async function main() {
       console.log(`  transferring ${DEPOSIT_SOL} SOL from ${label} (waiting for finalized…)`);
       const sig = await transferFinalized(kp, treasury, DEPOSIT_SOL);
       const dep = await client.post("/api/deposits", { signature: sig });
-      if (dep.status !== 201) throw new Error(`${label} deposit rejected (${dep.status}): ${JSON.stringify(dep.json)}`);
+      expectOk(dep, `${label} POST /api/deposits`, [200, 201]);
       const bal = await getBalance(client);
       if (bal.available <= 0n) throw new Error(`${label} balance not credited`);
       console.log(`  ${label} credited: ${Number(bal.available) / LAMPORTS_PER_SOL} SOL available`);
@@ -354,10 +364,7 @@ async function main() {
       stakeLamports: STAKE_LAMPORTS.toString(),
       friendLink: "https://link.clashroyale.com/invite/friend/en?tag=SMOKETEST",
     });
-    if (created.status !== 200 && created.status !== 201) {
-      throw new Error(`create failed (${created.status}): ${JSON.stringify(created.json)}`);
-    }
-    const duel = unwrap(created.json).duel;
+    const duel = unwrap(expectOk(created, "POST /api/duels", [200, 201])).duel;
     duelId = duel.id;
     const after = await getBalance(A);
     if (after.locked - before.locked !== STAKE_LAMPORTS) {
@@ -368,9 +375,7 @@ async function main() {
     const accepted = await B.post(`/api/duels/${duelId}/accept`, {
       friendLink: "https://link.clashroyale.com/invite/friend/en?tag=SMOKETEST2",
     });
-    if (accepted.status !== 200 && accepted.status !== 201) {
-      throw new Error(`accept failed (${accepted.status}): ${JSON.stringify(accepted.json)}`);
-    }
+    expectOk(accepted, "POST /api/duels/:id/accept", [200, 201]);
     const balB = await getBalance(B);
     if (balB.locked < STAKE_LAMPORTS) throw new Error("opponent stake not locked");
     record("duel accepted, opponent stake locked", "PASS", `status ${unwrap(accepted.json).duel.status}`);
@@ -386,8 +391,8 @@ async function main() {
   } else {
     try {
       const sweep = await internal("/api/internal/duels/verify", VERIFY_SECRET);
-      if (sweep.status !== 200) throw new Error(`sweep HTTP ${sweep.status}: ${JSON.stringify(sweep.json)}`);
-      const detail = unwrap((await A.get(`/api/duels/${duelId}`)).json).duel;
+      expectOk(sweep, "POST /api/internal/duels/verify");
+      const detail = unwrap(expectOk(await A.get(`/api/duels/${duelId}`), "GET /api/duels/:id")).duel;
       // With linked game accounts the duel moves to VERIFYING and both players
       // are notified; without them it stays ACTIVE (sweep can't load tags).
       if (detail.status === "VERIFYING") {
@@ -409,20 +414,18 @@ async function main() {
       record("withdrawal", "SKIP", `B available ${amount} below the 0.01 SOL minimum`);
     } else {
       const reqRes = await B.post("/api/withdrawals", { amountLamports: amount.toString() });
-      if (reqRes.status !== 200 && reqRes.status !== 201) {
-        throw new Error(`request failed (${reqRes.status}): ${JSON.stringify(reqRes.json)}`);
-      }
+      expectOk(reqRes, "POST /api/withdrawals", [200, 201]);
       if (!WITHDRAWAL_SECRET) {
         record("withdrawal requested", "PASS", "set WITHDRAWAL_CRON_SECRET to also test the payout worker");
       } else {
         const chainBefore = await connection.getBalance(bob.publicKey);
         const proc = await internal("/api/internal/withdrawals/process", WITHDRAWAL_SECRET);
-        if (proc.status !== 200) throw new Error(`payout worker HTTP ${proc.status}: ${JSON.stringify(proc.json)}`);
+        expectOk(proc, "POST /api/internal/withdrawals/process");
         // Poll briefly for the on-chain payout to land.
         let paid = false;
         for (let i = 0; i < 10 && !paid; i++) {
           await new Promise((r) => setTimeout(r, 3_000));
-          const list = unwrap((await B.get("/api/withdrawals")).json);
+          const list = unwrap(expectOk(await B.get("/api/withdrawals"), "GET /api/withdrawals"));
           const items = list.items ?? list.withdrawals ?? [];
           paid = items.some((w) => w.status === "PAID");
         }
