@@ -1,0 +1,76 @@
+diff --git a/apps/web/scripts/devnet-smoke.mjs b/apps/web/scripts/devnet-smoke.mjs
+index a7fc147..a84ad75 100644
+--- a/apps/web/scripts/devnet-smoke.mjs
++++ b/apps/web/scripts/devnet-smoke.mjs
+@@ -193,6 +193,25 @@ function parseSecretKey(raw) {
+   return Keypair.fromSecretKey(bs58.decode(trimmed));
+ }
+ 
++/**
++ * Polls until the RPC reports the account holding at least `minLamports` at
++ * FINALIZED commitment. Funding can confirm while the finalized state the next
++ * transfer will be simulated against still shows zero — the source of the
++ * "found no record of a prior credit" race on devnet.
++ */
++async function waitForFinalizedBalance(pubkey, minLamports, timeoutMs = 45_000) {
++  const deadline = Date.now() + timeoutMs;
++  while (Date.now() < deadline) {
++    const bal = await connection.getBalance(pubkey, "finalized");
++    if (bal >= minLamports) return;
++    await new Promise((r) => setTimeout(r, 1_500));
++  }
++  throw new Error(
++    `Timed out waiting for ${pubkey.toBase58()} to reach ${minLamports} lamports (finalized). ` +
++      `The RPC may be lagging — rerun, or use a dedicated RPC via NEXT_PUBLIC_SOLANA_RPC_URL.`,
++  );
++}
++
+ async function fund(recipient, sol) {
+   if (FUNDER_RAW) {
+     const funder = parseSecretKey(FUNDER_RAW);
+@@ -203,7 +222,8 @@ async function fund(recipient, sol) {
+         lamports: Math.round(sol * LAMPORTS_PER_SOL),
+       }),
+     );
+-    await sendAndConfirmTransaction(connection, tx, [funder], { commitment: "confirmed" });
++    await sendAndConfirmTransaction(connection, tx, [funder], { commitment: "finalized" });
++    await waitForFinalizedBalance(recipient, Math.round(sol * LAMPORTS_PER_SOL));
+     return;
+   }
+   // Devnet airdrops are rate-limited and flaky; retry with backoff.
+@@ -211,8 +231,9 @@ async function fund(recipient, sol) {
+   for (let attempt = 1; attempt <= 3; attempt++) {
+     try {
+       const sig = await connection.requestAirdrop(recipient, Math.round(sol * LAMPORTS_PER_SOL));
+-      const latest = await connection.getLatestBlockhash("confirmed");
+-      await connection.confirmTransaction({ signature: sig, ...latest }, "confirmed");
++      const latest = await connection.getLatestBlockhash("finalized");
++      await connection.confirmTransaction({ signature: sig, ...latest }, "finalized");
++      await waitForFinalizedBalance(recipient, Math.round(sol * LAMPORTS_PER_SOL));
+       return;
+     } catch (e) {
+       lastErr = e;
+@@ -235,7 +256,14 @@ async function transferFinalized(from, to, sol) {
+       lamports: Math.round(sol * LAMPORTS_PER_SOL),
+     }),
+   );
+-  return sendAndConfirmTransaction(connection, tx, [from], { commitment: "finalized" });
++  try {
++    return await sendAndConfirmTransaction(connection, tx, [from], { commitment: "finalized" });
++  } catch (e) {
++    // Surface the actual program logs instead of the "call getLogs()" hint.
++    const logs = typeof e?.getLogs === "function" ? await e.getLogs(connection).catch(() => null) : e?.logs;
++    if (logs?.length) throw new Error(`${e.message}\nProgram logs:\n  ${logs.join("\n  ")}`);
++    throw e;
++  }
+ }
+ 
+ // ─── SIWS auth ────────────────────────────────────────────────────────────────
+@@ -339,6 +367,7 @@ async function main() {
+       [B, bob, "B"],
+     ]) {
+       console.log(`  transferring ${DEPOSIT_SOL} SOL from ${label} (waiting for finalized…)`);
++      await waitForFinalizedBalance(kp.publicKey, Math.round(DEPOSIT_SOL * LAMPORTS_PER_SOL));
+       const sig = await transferFinalized(kp, treasury, DEPOSIT_SOL);
+       const dep = await client.post("/api/deposits", { signature: sig });
+       expectOk(dep, `${label} POST /api/deposits`, [200, 201]);
