@@ -45,6 +45,7 @@ export function toWithdrawalView(w: WithdrawalRequest) {
     heldReason: w.heldReason,
     reviewNotes: w.reviewNotes,
     txSignature: w.txSignature,
+    error: w.error ?? null,
     createdAt: w.createdAt.toISOString(),
     reviewedAt: w.reviewedAt?.toISOString() ?? null,
     completedAt: w.completedAt?.toISOString() ?? null,

@@ -1,0 +1,76 @@
+diff --git a/apps/web/scripts/devnet-smoke.mjs b/apps/web/scripts/devnet-smoke.mjs
+index 7732d69..5ed9541 100644
+--- a/apps/web/scripts/devnet-smoke.mjs
++++ b/apps/web/scripts/devnet-smoke.mjs
+@@ -453,32 +453,43 @@ async function main() {
+       record("withdrawal", "SKIP", `B available ${amount} below the 0.01 SOL minimum`);
+     } else {
+       const reqRes = await B.post("/api/withdrawals", { amountLamports: amount.toString() });
+-      expectOk(reqRes, "POST /api/withdrawals", [200, 201]);
+-      if (!WITHDRAWAL_SECRET) {
++      const reqBody = unwrap(expectOk(reqRes, "POST /api/withdrawals", [200, 201]));
++
++      // A user with an active dispute lands in PENDING_REVIEW and is NOT auto-paid
++      // — that's correct behaviour, so report it as a pass, not a failure.
++      if (reqBody.autoApproved === false || reqBody.withdrawal?.status === "PENDING_REVIEW") {
++        record("withdrawal held for review", "PASS", "user has an open dispute — awaits admin (expected)");
++      } else if (!WITHDRAWAL_SECRET) {
+         record("withdrawal requested", "PASS", "set WITHDRAWAL_CRON_SECRET to also test the payout worker");
+       } else {
+         const chainBefore = await connection.getBalance(bob.publicKey);
+         const proc = await internal("/api/internal/withdrawals/process", WITHDRAWAL_SECRET);
+         expectOk(proc, "POST /api/internal/withdrawals/process");
+-        // Poll briefly for the on-chain payout to land.
+-        let paid = false;
+-        for (let i = 0; i < 10 && !paid; i++) {
++
++        // Poll the request to a terminal state. The schema's terminal statuses
++        // are COMPLETED (paid) and FAILED (reverted) — NOT "PAID".
++        let terminal = null;
++        for (let i = 0; i < 15 && !terminal; i++) {
+           await new Promise((r) => setTimeout(r, 3_000));
+           const list = unwrap(expectOk(await B.get("/api/withdrawals"), "GET /api/withdrawals"));
+           const items = list.items ?? list.withdrawals ?? [];
+-          paid = items.some((w) => w.status === "PAID");
++          terminal = items.find((w) => w.status === "COMPLETED" || w.status === "FAILED") ?? null;
+         }
+-        const chainAfter = await connection.getBalance(bob.publicKey);
+-        if (paid && chainAfter > chainBefore) {
+-          record("withdrawal paid on-chain", "PASS", `+${(chainAfter - chainBefore) / LAMPORTS_PER_SOL} SOL to B`);
+-        } else if (paid) {
+-          record("withdrawal PAID in ledger", "PASS", "on-chain delta not yet visible at confirmed commitment");
++
++        if (!terminal) {
++          record("withdrawal payout", "FAIL", "still PROCESSING after 45s — check server logs / treasury funding");
++        } else if (terminal.status === "FAILED") {
++          record("withdrawal payout", "FAIL", `payout FAILED: ${terminal.error ?? "see server logs"}`);
+         } else {
+-          record(
+-            "withdrawal payout",
+-            "FAIL",
+-            "not PAID after 30s — is TREASURY_SECRET_KEY set on the server and the treasury funded?",
+-          );
++          // COMPLETED — the ledger is settled and a tx signature was recorded.
++          const chainAfter = await connection.getBalance(bob.publicKey);
++          const delta = (chainAfter - chainBefore) / LAMPORTS_PER_SOL;
++          const sig = terminal.txSignature ? ` tx ${String(terminal.txSignature).slice(0, 8)}…` : "";
++          if (chainAfter > chainBefore) {
++            record("withdrawal paid on-chain", "PASS", `+${delta} SOL to B${sig}`);
++          } else {
++            record("withdrawal COMPLETED", "PASS", `ledger settled${sig}; on-chain delta not yet visible at confirmed commitment`);
++          }
+         }
+       }
+     }
+diff --git a/apps/web/src/server/services/withdrawal/service.ts b/apps/web/src/server/services/withdrawal/service.ts
+index 5a8980e..0713d04 100644
+--- a/apps/web/src/server/services/withdrawal/service.ts
++++ b/apps/web/src/server/services/withdrawal/service.ts
+@@ -45,6 +45,7 @@ export function toWithdrawalView(w: WithdrawalRequest) {
+     heldReason: w.heldReason,
+     reviewNotes: w.reviewNotes,
+     txSignature: w.txSignature,
++    error: w.error ?? null,
+     createdAt: w.createdAt.toISOString(),
+     reviewedAt: w.reviewedAt?.toISOString() ?? null,
+     completedAt: w.completedAt?.toISOString() ?? null,
