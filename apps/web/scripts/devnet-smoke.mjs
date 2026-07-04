@@ -369,7 +369,17 @@ async function main() {
       console.log(`  transferring ${DEPOSIT_SOL} SOL from ${label} (waiting for finalized…)`);
       await waitForFinalizedBalance(kp.publicKey, Math.round(DEPOSIT_SOL * LAMPORTS_PER_SOL));
       const sig = await transferFinalized(kp, treasury, DEPOSIT_SOL);
-      const dep = await client.post("/api/deposits", { signature: sig });
+      // Load-balanced RPCs lack read-your-write consistency: the server's node
+      // may briefly not see a tx our node already finalized. DEPOSIT_UNVERIFIED
+      // is retryable (the signature is idempotent server-side).
+      let dep;
+      for (let attempt = 1; ; attempt++) {
+        dep = await client.post("/api/deposits", { signature: sig });
+        const rpcLag = dep.status === 400 && dep.json?.error?.code === "DEPOSIT_UNVERIFIED";
+        if (!rpcLag || attempt >= 15) break;
+        if (attempt === 1) console.log(`  ${label}: server RPC view lagging, retrying confirm…`);
+        await new Promise((r) => setTimeout(r, 3_000));
+      }
       expectOk(dep, `${label} POST /api/deposits`, [200, 201]);
       const bal = await getBalance(client);
       if (bal.available <= 0n) throw new Error(`${label} balance not credited`);

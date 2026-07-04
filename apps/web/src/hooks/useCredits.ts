@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
-import { apiPost } from "@/lib/api/client";
+import { apiPost, ApiError } from "@/lib/api/client";
 
 /**
  * Data hooks for the GGDUEL balance: read balance + ledger, make a deposit
@@ -146,10 +146,27 @@ export function useDeposit() {
         "finalized",
       );
 
-      return apiPost<{ deposit: { id: string; creditedLamports: string } }>(
-        "/api/deposits",
-        { signature },
-      );
+      // Load-balanced RPC providers don't guarantee read-your-write across
+      // nodes: the node that finalized our confirmation may not be the node the
+      // SERVER queries, which can briefly report "transaction not found" for a
+      // genuinely finalized tx. DEPOSIT_UNVERIFIED is therefore retryable — the
+      // signature is idempotent server-side, so re-posting can never
+      // double-credit. Poll for up to ~45s before surfacing a failure.
+      const CONFIRM_ATTEMPTS = 15;
+      const CONFIRM_INTERVAL_MS = 3_000;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await apiPost<{ deposit: { id: string; creditedLamports: string } }>(
+            "/api/deposits",
+            { signature },
+          );
+        } catch (e) {
+          const rpcLag =
+            e instanceof ApiError && e.code === "DEPOSIT_UNVERIFIED" && attempt < CONFIRM_ATTEMPTS;
+          if (!rpcLag) throw e;
+          await new Promise((r) => setTimeout(r, CONFIRM_INTERVAL_MS));
+        }
+      }
     },
     [connection, publicKey, sendTransaction],
   );
