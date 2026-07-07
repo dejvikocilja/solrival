@@ -36,6 +36,9 @@ export function getDuelDetail(id: string) {
       creator: { select: { id: true, username: true, walletAddress: true } },
       opponent: { select: { id: true, username: true, walletAddress: true } },
       rule: true,
+      // Lets the detail page show "result under review" and hide the dispute
+      // CTA once one exists (one dispute per duel).
+      dispute: { select: { status: true, createdAt: true, raisedById: true } },
     },
   });
 }

@@ -24,6 +24,7 @@ export type VerificationStatus =
   | 'verified'
   | 'disputed'
   | 'timeout'
+  | 'refunded'
   | 'error'
 
 /**

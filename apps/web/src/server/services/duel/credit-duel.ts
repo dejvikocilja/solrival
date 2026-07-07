@@ -385,3 +385,151 @@ export async function refundCreditDuel(duelId: string): Promise<Duel> {
 
   return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
 }
+
+// ─── Post-settlement reversal (admin dispute resolution only) ─────────────────
+
+/**
+ * Overturns a settled credit duel in favour of `newWinnerId` — the admin has
+ * ruled that automatic verification paid the wrong player.
+ *
+ * Atomically: claws the net reward back from the original winner's available
+ * balance, credits it to the new winner, flips both players' win/loss records
+ * and lifetime-won stats, and repoints `winnerId`. The duel stays COMPLETED —
+ * the result stands, just for the other player. The platform rake is unchanged.
+ *
+ * Idempotent: if `winnerId` already equals `newWinnerId` (retry, or the admin
+ * upheld the original result) this is a no-op.
+ *
+ * Throws CreditError(INSUFFICIENT_FUNDS) if the original winner's available
+ * balance can't cover the clawback (e.g. they staked it on another duel).
+ * Withdrawals are frozen for both participants while the dispute is open, so
+ * this can only happen from credits re-locked in play — the admin resolves
+ * that duel first or waits, then retries. We never allow negative balances.
+ */
+export async function overturnCreditSettlement(duelId: string, newWinnerId: string): Promise<Duel> {
+  const duel = await prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+  if (duel.fundingMode !== "CREDITS") throw new DuelError("WRONG_MODE", "Not a credit duel", 400);
+  if (duel.status !== "COMPLETED" || !duel.winnerId || !duel.opponentId || duel.settledAt === null)
+    throw new DuelError("NOT_SETTLED", "Only a settled duel can be overturned", 409);
+  if (newWinnerId !== duel.creatorId && newWinnerId !== duel.opponentId)
+    throw new DuelError("BAD_WINNER", "Winner must be a participant", 400);
+  if (duel.winnerId === newWinnerId) return duel; // upheld / already overturned — idempotent
+
+  const originalWinnerId = duel.winnerId;
+  const stake = duel.stakeLamports;
+  const pot = stake * 2n;
+  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
+  const reward = pot - rake;
+  const netWinnings = reward - stake; // lifetime-won delta applied at settlement
+
+  await prisma.$transaction(async (tx) => {
+    // Claim: repoint the winner only if the settlement we read still stands.
+    const moved = await tx.duel.updateMany({
+      where: { id: duelId, status: "COMPLETED", winnerId: originalWinnerId },
+      data: { winnerId: newWinnerId },
+    });
+    if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
+
+    await lockBalances(tx, [originalWinnerId, newWinnerId]);
+
+    // Claw the paid reward back from the player verification wrongly credited.
+    await applyEntry(tx, {
+      userId: originalWinnerId,
+      type: "ADMIN_ADJUSTMENT",
+      idempotencyKey: `duel-overturn-clawback:${duelId}`,
+      deltaAvailable: -reward,
+      lifetimeWon: -netWinnings,
+      duelId,
+      memo: "Duel result overturned by dispute review — payout reversed",
+    });
+    // Pay the rightful winner the same net reward.
+    await applyEntry(tx, {
+      userId: newWinnerId,
+      type: "ADMIN_ADJUSTMENT",
+      idempotencyKey: `duel-overturn-payout:${duelId}`,
+      deltaAvailable: reward,
+      lifetimeWon: netWinnings,
+      duelId,
+      memo: "Duel result overturned by dispute review — pot credited (net of platform rake)",
+    });
+
+    // Flip the denormalized records set at settlement.
+    await tx.user.update({
+      where: { id: originalWinnerId },
+      data: { wins: { decrement: 1 }, losses: { increment: 1 } },
+    });
+    await tx.user.update({
+      where: { id: newWinnerId },
+      data: { wins: { increment: 1 }, losses: { decrement: 1 } },
+    });
+  });
+
+  return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+}
+
+/**
+ * Voids a settled credit duel — the admin has ruled no fair result exists.
+ *
+ * Atomically: claws back the original winner's net gain, returns the loser's
+ * forfeited stake, gives up the platform rake (both players end exactly where
+ * they started), reverts the win/loss records, and moves the duel
+ * COMPLETED → REFUNDED with the result cleared.
+ *
+ * Idempotent via the status claim: a duel already REFUNDED returns as-is.
+ * Same INSUFFICIENT_FUNDS semantics as {@link overturnCreditSettlement}.
+ */
+export async function refundSettledCreditDuel(duelId: string): Promise<Duel> {
+  const duel = await prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+  if (duel.status === "REFUNDED") return duel; // idempotent
+  if (duel.fundingMode !== "CREDITS") throw new DuelError("WRONG_MODE", "Not a credit duel", 400);
+  if (duel.status !== "COMPLETED" || !duel.winnerId || !duel.opponentId || duel.settledAt === null)
+    throw new DuelError("NOT_SETTLED", "Only a settled duel can be voided", 409);
+
+  const winnerId = duel.winnerId;
+  const loserId = winnerId === duel.creatorId ? duel.opponentId : duel.creatorId;
+  const stake = duel.stakeLamports;
+  const pot = stake * 2n;
+  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
+  const reward = pot - rake;
+  const netWinnings = reward - stake;
+
+  await prisma.$transaction(async (tx) => {
+    const moved = await tx.duel.updateMany({
+      where: { id: duelId, status: "COMPLETED", winnerId },
+      data: {
+        status: "REFUNDED",
+        winnerId: null,
+        winnerPayoutLamports: null,
+        feeCollectedLamports: null,
+      },
+    });
+    if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
+
+    await lockBalances(tx, [winnerId, loserId]);
+
+    // Winner returns their net gain (payout minus the stake they'd committed).
+    await applyEntry(tx, {
+      userId: winnerId,
+      type: "ADMIN_ADJUSTMENT",
+      idempotencyKey: `duel-void-winner:${duelId}`,
+      deltaAvailable: -netWinnings,
+      lifetimeWon: -netWinnings,
+      duelId,
+      memo: "Duel voided by dispute review — net winnings reversed, stake returned",
+    });
+    // Loser gets their forfeited stake back in full (platform returns the rake).
+    await applyEntry(tx, {
+      userId: loserId,
+      type: "ADMIN_ADJUSTMENT",
+      idempotencyKey: `duel-void-loser:${duelId}`,
+      deltaAvailable: stake,
+      duelId,
+      memo: "Duel voided by dispute review — stake returned",
+    });
+
+    await tx.user.update({ where: { id: winnerId }, data: { wins: { decrement: 1 } } });
+    await tx.user.update({ where: { id: loserId }, data: { losses: { decrement: 1 } } });
+  });
+
+  return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+}

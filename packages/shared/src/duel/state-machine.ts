@@ -24,10 +24,17 @@ const TRANSITIONS: Record<DuelStatus, readonly DuelStatus[]> = {
   CREATED: ["WAITING_FOR_OPPONENT", "CANCELLED", "EXPIRED"],
   WAITING_FOR_OPPONENT: ["ACCEPTED", "CANCELLED", "EXPIRED"],
   ACCEPTED: ["ACTIVE", "DISPUTED", "REFUNDED"],
-  ACTIVE: ["VERIFYING", "DISPUTED"],
+  // ACTIVE → REFUNDED: a duel with no verifiable result by its deadline (e.g.
+  // no linked game accounts to match battles against) is refunded by the
+  // verification sweep — no duel may stay in-flight indefinitely.
+  ACTIVE: ["VERIFYING", "DISPUTED", "REFUNDED"],
   VERIFYING: ["COMPLETED", "DISPUTED", "REFUNDED"],
   DISPUTED: ["COMPLETED", "REFUNDED"],
-  COMPLETED: [],
+  // COMPLETED is settled, not immutable: within the post-settlement dispute
+  // window an admin may void the result (→ REFUNDED, with a full ledger
+  // reversal). Overturning the winner keeps the duel COMPLETED (result stands,
+  // just for the other player), so no other transition is needed.
+  COMPLETED: ["REFUNDED"],
   EXPIRED: [],
   CANCELLED: [],
   REFUNDED: [],

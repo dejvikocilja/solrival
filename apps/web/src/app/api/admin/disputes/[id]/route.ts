@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
 import { prisma } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { resolveDisputeSettlement } from "@/server/services/duel/settlement"
+import { publishDisputeResolved } from "@/lib/realtime/event-publisher"
 import { handle, ok, fail } from "@/server/http/respond"
 import { z } from "zod"
 
@@ -30,8 +31,12 @@ export async function PATCH(
       return fail("ALREADY_RESOLVED", "Dispute is already resolved", 409)
     }
 
-    // Move the money first: settle the winner or refund both players (credits or
-    // on-chain, per the duel's funding mode). Idempotent — safe if retried.
+    // Move the money first: settle the winner or refund both players — or, for
+    // a dispute raised against an already-settled result, uphold / overturn /
+    // void it (see resolveDisputeSettlement). Idempotent — safe if retried. A
+    // clawback the original winner's balance can't cover surfaces here as a
+    // 409 (their withdrawals are frozen while the dispute is open, so waiting
+    // or resolving their other duels first always unblocks it).
     await resolveDisputeSettlement(existing.duelId, body.outcome)
 
     const updated = await prisma.dispute.update({
@@ -58,6 +63,29 @@ export async function PATCH(
         metadata: { outcome: body.outcome, duelId: existing.duelId, notes: body.resolution },
       },
     })
+
+    // Tell both players how it was resolved (post-commit; the bell is often the
+    // only signal — the counterparty may not be watching the duel page).
+    const participants = await prisma.duel.findUnique({
+      where: { id: existing.duelId },
+      select: {
+        creatorId: true,
+        opponentId: true,
+        winner: { select: { username: true } },
+      },
+    })
+    if (participants) {
+      const winnerTag = participants.winner?.username ?? null
+      for (const targetUserId of [participants.creatorId, participants.opponentId]) {
+        if (!targetUserId) continue
+        publishDisputeResolved({
+          duelId: existing.duelId,
+          resolution: body.outcome,
+          winnerTag,
+          targetUserId,
+        })
+      }
+    }
 
     return ok({ data: updated })
   })

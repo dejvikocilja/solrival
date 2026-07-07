@@ -4,174 +4,61 @@
  * useNotifications
  *
  * Wraps `useRealtimeEvents` and converts each incoming event into a
- * human-readable `Notification`. Manages a capped list (max 50), unread count,
- * and a toast queue (newest 3 unread).
+ * human-readable `Notification` (see `@/lib/notifications/render`). Manages a
+ * capped list (max 50), unread count, and a toast queue (newest 3 unread).
+ *
+ * Persistence: on sign-in the hook hydrates from GET /api/notifications (the
+ * server stores every targeted event), then merges live SSE events on top,
+ * deduped by event id. Mark-read and dismiss update local state optimistically
+ * and persist fire-and-forget — a failed write costs read-state durability,
+ * never UI responsiveness. Toasts are only raised for LIVE events; hydrated
+ * history never re-toasts on refresh.
  *
  * Toasts auto-dismiss after 5 seconds.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRealtimeEvents } from './useRealtimeEvents'
-import type { RealtimeEvent, RealtimeEventKind } from '@/lib/realtime/types'
+import { toNotification, type Notification } from '@/lib/notifications/render'
+import type { RealtimeEvent } from '@/lib/realtime/types'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface Notification {
-  id: string
-  kind: RealtimeEventKind
-  title: string
-  description: string
-  actionLabel?: string
-  actionHref?: string
-  read: boolean
-  receivedAt: Date
-}
-
-// ─── Notification factory ─────────────────────────────────────────────────────
-
-function toNotification(
-  event: RealtimeEvent,
-  playerTag: string | null,
-): Notification | null {
-  const base = {
-    id: event.id,
-    kind: event.kind,
-    read: false,
-    receivedAt: new Date(event.occurredAt),
-  }
-
-  switch (event.kind) {
-    case 'duel.accepted':
-      return {
-        ...base,
-        title: 'Duel Accepted',
-        description: `Your duel against ${event.challengerTag} is now active. Good luck!`,
-        actionLabel: 'View duel',
-        actionHref: `/duels/${event.duelId}`,
-      }
-
-    case 'duel.expired':
-      return {
-        ...base,
-        title: 'Duel Expired',
-        description: `Duel #${event.duelId.slice(0, 8)} expired. ${event.refundedSol} SOL has been refunded.`,
-        actionLabel: 'Create new duel',
-        actionHref: '/duels/create',
-      }
-
-    case 'verification.started':
-      return {
-        ...base,
-        title: 'Verification Started',
-        description: `We're checking the battle log for your duel against ${
-          playerTag === event.player1Tag ? event.player2Tag : event.player1Tag
-        }.`,
-        actionLabel: 'View duel',
-        actionHref: `/duels/${event.duelId}`,
-      }
-
-    case 'verification.completed': {
-      const isWinner = playerTag !== null && event.winnerTag === playerTag
-
-      if (event.status === 'verified' && isWinner) {
-        return {
-          ...base,
-          title: 'You Won! 🏆',
-          description: `Victory confirmed — your reward is on its way.`,
-          actionLabel: 'View duel',
-          actionHref: `/duels/${event.duelId}`,
-        }
-      }
-
-      if (event.status === 'verified' && !isWinner) {
-        return {
-          ...base,
-          title: 'Match Verified',
-          description: `${event.winnerTag ?? 'Opponent'} won the duel. Better luck next time!`,
-          actionLabel: 'View duel',
-          actionHref: `/duels/${event.duelId}`,
-        }
-      }
-
-      if (event.status === 'disputed') {
-        return {
-          ...base,
-          title: 'Duel Disputed',
-          description: 'Automatic verification could not confirm a result. Our team will review this duel.',
-          actionLabel: 'View duel',
-          actionHref: `/duels/${event.duelId}`,
-        }
-      }
-
-      // timeout
-      return {
-        ...base,
-        title: 'Duel Timed Out',
-        description: 'No matching battle was found within the verification window. The duel has been voided.',
-        actionLabel: 'View duel',
-        actionHref: `/duels/${event.duelId}`,
-      }
-    }
-
-    case 'reward.paid':
-      return {
-        ...base,
-        title: 'Reward Received',
-        description: `+${event.amountSol} SOL added to your wallet (${event.feeSol} SOL platform fee deducted).`,
-        actionLabel: 'View duel',
-        actionHref: `/duels/${event.duelId}`,
-      }
-
-    case 'tournament.started':
-      return {
-        ...base,
-        title: 'Tournament Started',
-        description: `${event.name} has begun with ${event.playerCount} players. Check the bracket!`,
-        actionLabel: 'View bracket',
-        actionHref: `/tournaments/${event.tournamentId}`,
-      }
-
-    case 'tournament.match_ready':
-      return {
-        ...base,
-        title: 'Your Match Is Ready',
-        description: `Round ${event.roundNumber}: ${event.player1Tag} vs ${event.player2Tag}. Time to play!`,
-        actionLabel: 'View match',
-        actionHref: `/tournaments/${event.tournamentId}`,
-      }
-
-    case 'tournament.match_completed':
-      return {
-        ...base,
-        title: 'Match Completed',
-        description: `Round ${event.roundNumber} result: ${event.winnerTag} advances to the next round.`,
-        actionLabel: 'View bracket',
-        actionHref: `/tournaments/${event.tournamentId}`,
-      }
-
-    case 'tournament.completed': {
-      const isChampion = playerTag !== null && event.winnerTag === playerTag
-      return {
-        ...base,
-        title: isChampion ? '🏆 Tournament Champion!' : 'Tournament Complete',
-        description: isChampion
-          ? `You won ${event.name} and ${event.prizePoolSol} SOL!`
-          : `${event.name} has ended. ${event.winnerTag} takes the trophy and ${event.prizePoolSol} SOL.`,
-        actionLabel: 'View results',
-        actionHref: `/tournaments/${event.tournamentId}`,
-      }
-    }
-
-    default:
-      return null
-  }
-}
+// Re-export so existing component imports (`from '@/hooks/useNotifications'`)
+// keep working after the renderer moved to lib.
+export type { Notification }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_NOTIFICATIONS = 50
 const MAX_TOASTS = 3
 const TOAST_DISMISS_MS = 5_000
+
+// ─── Persistence helpers (fire-and-forget) ────────────────────────────────────
+
+interface StoredNotification {
+  event: RealtimeEvent
+  read: boolean
+}
+
+function persistRead(ids?: string[]): void {
+  void fetch('/api/notifications', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(ids ? { ids } : {}),
+  }).catch(() => {
+    // Offline / transient failure — local state already updated; the worst
+    // case is the item shows unread again after the next refresh.
+  })
+}
+
+function persistDismiss(id: string): void {
+  void fetch(`/api/notifications/${id}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  }).catch(() => {
+    // Same rationale as persistRead.
+  })
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -192,6 +79,7 @@ export function useNotifications(
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [toastIds, setToastIds] = useState<string[]>([])
   const dismissTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const hydratedRef = useRef(false)
 
   const scheduleToastDismiss = useCallback((id: string) => {
     const existing = dismissTimers.current.get(id)
@@ -215,14 +103,62 @@ export function useNotifications(
     }
   }, [])
 
+  // ── Hydration: load persisted notifications once per session ────────────────
+  useEffect(() => {
+    if (!enabled || playerTag === null) {
+      // Signed out (or session ended): clear everything and allow a fresh
+      // hydration on the next sign-in.
+      hydratedRef.current = false
+      setNotifications([])
+      setToastIds([])
+      return
+    }
+    if (hydratedRef.current) return
+    hydratedRef.current = true
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/notifications', { credentials: 'same-origin' })
+        if (!res.ok) return
+        const data = (await res.json()) as { notifications: StoredNotification[] }
+        if (cancelled) return
+
+        setNotifications((prev) => {
+          // Live SSE events may have landed before the fetch resolved — they
+          // win (they're newest and already toasted). Dedupe by event id.
+          const seen = new Set(prev.map((n) => n.id))
+          const hydrated = data.notifications
+            .map(({ event, read }) => {
+              const n = toNotification(event, playerTag)
+              return n ? { ...n, read } : null
+            })
+            .filter((n): n is Notification => n !== null && !seen.has(n.id))
+
+          return [...prev, ...hydrated]
+            .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+            .slice(0, MAX_NOTIFICATIONS)
+        })
+      } catch {
+        // Fetch failed — degrade to session-only behavior (live events still
+        // arrive over SSE); nothing to surface to the user.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, playerTag])
+
   const handleEvent = useCallback(
     (event: RealtimeEvent) => {
       const notification = toNotification(event, playerTag)
       if (!notification) return
 
       setNotifications((prev) => {
-        const next = [notification, ...prev].slice(0, MAX_NOTIFICATIONS)
-        return next
+        // Guard against SSE redelivery / hydration overlap
+        if (prev.some((n) => n.id === notification.id)) return prev
+        return [notification, ...prev].slice(0, MAX_NOTIFICATIONS)
       })
 
       // Promote to toast queue
@@ -242,10 +178,12 @@ export function useNotifications(
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
     )
+    persistRead([id])
   }, [])
 
   const markAllRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    persistRead()
   }, [])
 
   const dismiss = useCallback((id: string) => {
@@ -256,6 +194,7 @@ export function useNotifications(
       clearTimeout(timer)
       dismissTimers.current.delete(id)
     }
+    persistDismiss(id)
   }, [])
 
   const unreadCount = notifications.filter((n) => !n.read).length

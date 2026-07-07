@@ -45,8 +45,11 @@ interface DuelRow {
   gameMode: string          // rule.mode — the canonical in-game mode matched in the battle log
   creatorId: string
   opponentId: string
-  creatorPlayerTag: string  // Supercell tag with #
-  opponentPlayerTag: string // Supercell tag with #
+  // Supercell tags (with #). Null when a participant never linked a game
+  // account for this game — such a duel is structurally unverifiable and is
+  // refunded once its window elapses rather than left ACTIVE forever.
+  creatorPlayerTag: string | null
+  opponentPlayerTag: string | null
   acceptedAt: Date
 }
 
@@ -54,8 +57,11 @@ interface DuelRow {
 
 /**
  * Loads the duel + both players' linked game-account tags and the rule's
- * canonical mode. Returns null unless the duel is in a verifiable state
- * (ACTIVE or VERIFYING) and both players + tags are present.
+ * canonical mode. Returns null only when the duel doesn't exist or isn't in a
+ * verifiable lifecycle state (ACTIVE / VERIFYING) with an opponent — i.e. there
+ * is genuinely nothing for the sweep to act on. A duel that IS in-flight but is
+ * missing player tags is still returned (with null tags) so the sweep can time
+ * it out and refund it rather than leave it ACTIVE indefinitely.
  */
 async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
   const duel = await prisma.duel.findUnique({
@@ -74,13 +80,6 @@ async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
   }
   if (!duel.opponentId || !duel.acceptedAt) return null
 
-  const creatorTag = duel.creatorGameAccount?.inGameTag
-  const opponentTag = duel.opponentGameAccount?.inGameTag
-  if (!creatorTag || !opponentTag) {
-    console.warn({ msg: 'verify_duel_missing_player_tags', duelId })
-    return null
-  }
-
   return {
     id: duel.id,
     status: duel.status as 'ACTIVE' | 'VERIFYING',
@@ -88,8 +87,8 @@ async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
     gameMode: duel.rule.mode,
     creatorId: duel.creatorId,
     opponentId: duel.opponentId,
-    creatorPlayerTag: creatorTag,
-    opponentPlayerTag: opponentTag,
+    creatorPlayerTag: duel.creatorGameAccount?.inGameTag ?? null,
+    opponentPlayerTag: duel.opponentGameAccount?.inGameTag ?? null,
     acceptedAt: duel.acceptedAt,
   }
 }
@@ -101,6 +100,9 @@ const normTag = (t: string) => t.toUpperCase().replace(/^#?/, '#')
 /** Maps a detected winner tag to the winning user id, or null for a draw/unknown. */
 function resolveWinnerId(duel: DuelRow, winnerTag: string | null): string | null {
   if (!winnerTag) return null
+  // Tags are always present on the verified path, but the type allows null
+  // (unverifiable duels); without both we cannot attribute a winner.
+  if (duel.creatorPlayerTag === null || duel.opponentPlayerTag === null) return null
   const w = normTag(winnerTag)
   if (w === normTag(duel.creatorPlayerTag)) return duel.creatorId
   if (w === normTag(duel.opponentPlayerTag)) return duel.opponentId
@@ -139,7 +141,7 @@ async function settleFromResult(duel: DuelRow, result: VerificationResult): Prom
 
 // ─── Context builder ──────────────────────────────────────────────────────────
 
-function buildContext(duel: DuelRow): DuelVerificationContext {
+function buildContext(duel: DuelRow, creatorTag: string, opponentTag: string): DuelVerificationContext {
   const acceptedAt = duel.acceptedAt
   const timeoutAt = new Date(acceptedAt.getTime() + TIMEOUT_MINUTES * 60 * 1_000)
 
@@ -147,11 +149,16 @@ function buildContext(duel: DuelRow): DuelVerificationContext {
     duelId: duel.id,
     gameId: toGameId(duel.game),
     gameMode: duel.gameMode,
-    player1Tag: duel.creatorPlayerTag,
-    player2Tag: duel.opponentPlayerTag,
+    player1Tag: creatorTag,
+    player2Tag: opponentTag,
     acceptedAt,
     timeoutAt,
   }
+}
+
+/** The verification deadline for a duel (acceptedAt + validity window). */
+function deadlineFor(duel: DuelRow): Date {
+  return new Date(duel.acceptedAt.getTime() + TIMEOUT_MINUTES * 60 * 1_000)
 }
 
 // ─── Result factories ─────────────────────────────────────────────────────────
@@ -202,16 +209,20 @@ function errorResult(duelId: string, reason: string): VerificationResult {
  *
  * MUST run on the static-egress host (the Supercell API tokens are IP-locked).
  *
- *  - battle found            → settle the winner (or refund a draw) → 'verified'
- *  - past the timeout window → mark DISPUTED + open a dispute        → 'timeout'
- *  - no battle yet           → 'verifying' (left for the next sweep tick)
- *  - not in a verifiable state → 'error'
+ * The verification window (`acceptedAt + DUEL_VALIDITY_WINDOW_MIN`) is a hard
+ * deadline enforced for EVERY in-flight duel, independent of whether battle
+ * verification can run — so no duel can sit ACTIVE indefinitely:
+ *
+ *  - battle found                        → settle the winner (or refund a draw) → 'verified'
+ *  - past deadline, tags present, no battle → mark DISPUTED + open a dispute    → 'timeout'
+ *  - past deadline, tags missing         → refund both stakes (unverifiable)    → 'refunded'
+ *  - before deadline, tags missing       → 'verifying' (bounded; refunds at the deadline)
+ *  - before deadline, no battle yet      → 'verifying' (left for the next sweep tick)
+ *  - not in a verifiable state           → 'error'
  */
 export async function verifyDuelOnce(duelId: string): Promise<VerificationResult> {
   const duel = await loadDuelRow(duelId)
   if (duel === null) return errorResult(duelId, 'Duel not found or not in a verifiable state')
-
-  const ctx = buildContext(duel)
 
   // Events without a targetUserId broadcast to EVERY connected client, so all
   // verification events are published once per participant — other users must
@@ -220,6 +231,46 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
     publish(duel.creatorId)
     publish(duel.opponentId)
   }
+
+  const creatorTag = duel.creatorPlayerTag
+  const opponentTag = duel.opponentPlayerTag
+
+  const deadline = deadlineFor(duel)
+  const pastDeadline = Date.now() >= deadline.getTime()
+
+  // ── Hard deadline: resolve terminally so nothing stays in-flight forever ──
+  if (pastDeadline) {
+    if (creatorTag !== null && opponentTag !== null) {
+      // Both players linked accounts but no matching battle appeared in the
+      // window — a possible no-show. Keep funds locked and route to admin.
+      const ctx = buildContext(duel, creatorTag, opponentTag)
+      const reason = `No matching battle found within the verification window (expired ${deadline.toISOString()})`
+      await markDuelDisputed(duel.id)
+      await openDispute(ctx, reason)
+      notifyParticipants((targetUserId) =>
+        publishVerificationCompleted({ duelId, winnerTag: null, status: 'timeout', battleTime: null, targetUserId }),
+      )
+      return { duelId, status: 'timeout', winnerTag: null, battle: null, verifiedAt: new Date(), failureReason: reason }
+    }
+
+    // Structurally unverifiable (a participant never linked a game account):
+    // there is no data to judge a winner, so refund both stakes in full. This
+    // is the deterministic, self-serve outcome — no admin, no funds stranded.
+    const reason = `Verification window elapsed with no linked game accounts to match against (expired ${deadline.toISOString()})`
+    await applyDuelRefund(duel.id)
+    console.warn({ msg: 'verify_duel_refunded_unverifiable', duelId, reason })
+    notifyParticipants((targetUserId) =>
+      publishVerificationCompleted({ duelId, winnerTag: null, status: 'refunded', battleTime: null, targetUserId }),
+    )
+    return { duelId, status: 'refunded', winnerTag: null, battle: null, verifiedAt: new Date(), failureReason: reason }
+  }
+
+  // ── Before the deadline ──
+  // Nothing to verify yet without both tags; the duel is bounded by the
+  // deadline above, so it will refund rather than hang if tags never appear.
+  if (creatorTag === null || opponentTag === null) return verifyingResult(duelId)
+
+  const ctx = buildContext(duel, creatorTag, opponentTag)
 
   // First sweep visit: claim ACTIVE → VERIFYING (race-guarded — concurrent
   // sweeps or a racing dispute claim exactly once) and tell both players
@@ -234,23 +285,12 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
         publishVerificationStarted({
           duelId,
           gameId: ctx.gameId,
-          player1Tag: duel.creatorPlayerTag,
-          player2Tag: duel.opponentPlayerTag,
+          player1Tag: creatorTag,
+          player2Tag: opponentTag,
           targetUserId,
         }),
       )
     }
-  }
-
-  // Window expired → keep funds locked and route to admin review.
-  if (Date.now() >= ctx.timeoutAt.getTime()) {
-    const reason = `No matching battle found within the verification window (expired ${ctx.timeoutAt.toISOString()})`
-    await markDuelDisputed(duel.id)
-    await openDispute(ctx, reason)
-    notifyParticipants((targetUserId) =>
-      publishVerificationCompleted({ duelId, winnerTag: null, status: 'timeout', battleTime: null, targetUserId }),
-    )
-    return { duelId, status: 'timeout', winnerTag: null, battle: null, verifiedAt: new Date(), failureReason: reason }
   }
 
   let battle: BattleRecord | null = null

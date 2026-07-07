@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Swords } from "lucide-react";
+import { Swords, Flag } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { getMyDuels } from "@/server/services/duel/my-duels";
+import { listUserDisputes, disputeWindowHours, type UserDisputeView } from "@/server/services/dispute/service";
+import { SolAmount } from "@/components/marketplace/sol-amount";
 import { PageContainer, Section } from "@/components/ui/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -49,7 +51,7 @@ export default async function ProfilePage() {
     );
   }
 
-  const { duels } = await getMyDuels(user.id);
+  const [{ duels }, disputes] = await Promise.all([getMyDuels(user.id), listUserDisputes(user.id)]);
   const completed = duels.filter((d) => d.status === "COMPLETED" && d.youWon !== null);
   const recentForm = completed.slice(0, 10).map((d) => d.youWon as boolean); // newest first
 
@@ -151,6 +153,83 @@ export default async function ProfilePage() {
           </div>
         </Section>
       </div>
+
+      {/* disputes — every review on the user's duels, raised by them, their opponent, or the system */}
+      <div className="mt-5">
+        <Section title="Disputes">
+          {disputes.length > 0 ? (
+            <div className="space-y-2.5">
+              {disputes.map((d) => (
+                <DisputeRow key={d.id} dispute={d} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-body-sm text-muted">
+              No disputes — if a result ever looks wrong, you can contest it from the duel page for up
+              to {disputeWindowHours()} hours after it settles.
+            </p>
+          )}
+        </Section>
+      </div>
     </PageContainer>
+  );
+}
+
+// ─── Disputes section ─────────────────────────────────────────────────────────
+
+const DISPUTE_META: Record<string, { label: string; tone: BadgeProps["tone"] }> = {
+  OPEN: { label: "Under review", tone: "ember" },
+  UNDER_REVIEW: { label: "Under review", tone: "ember" },
+  RESOLVED_CREATOR_WIN: { label: "Resolved", tone: "victory" },
+  RESOLVED_OPPONENT_WIN: { label: "Resolved", tone: "victory" },
+  RESOLVED_REFUND: { label: "Refunded", tone: "neutral" },
+  REJECTED: { label: "Closed", tone: "neutral" },
+};
+
+const RAISED_BY_LABEL: Record<UserDisputeView["raisedBy"], string> = {
+  you: "Raised by you",
+  opponent: "Raised by your opponent",
+  system: "Flagged by verification",
+};
+
+function DisputeRow({ dispute }: { dispute: UserDisputeView }) {
+  const meta = DISPUTE_META[dispute.status] ?? { label: dispute.status, tone: "neutral" as const };
+  const raised = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(dispute.createdAt));
+
+  return (
+    <Link
+      href={`/duels/${dispute.duelId}`}
+      className="block rounded-xl border border-border bg-surface-2/40 px-4 py-3.5 transition-colors hover:border-border-strong hover:bg-surface-2/70 focus-visible:focus-ring"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ember/12 text-ember" aria-hidden>
+            <Flag className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="flex flex-wrap items-center gap-x-2 text-body-sm font-medium text-fg">
+              <Badge tone={GAME_TONE[dispute.game]}>{GAME_LABEL[dispute.game]}</Badge>
+              <span className="font-mono text-caption text-faint tabular">#{dispute.duelShortCode}</span>
+              <SolAmount lamports={dispute.stakeLamports} className="text-muted" />
+            </p>
+            <p className="mt-0.5 truncate text-caption text-faint">
+              {RAISED_BY_LABEL[dispute.raisedBy]} · {raised}
+              {dispute.reason ? <> · {dispute.reason}</> : null}
+            </p>
+          </div>
+        </div>
+        <Badge tone={meta.tone}>{meta.label}</Badge>
+      </div>
+      {dispute.resolutionNotes && dispute.resolvedAt ? (
+        <p className="mt-2.5 border-t border-border pt-2.5 text-caption text-muted">
+          <span className="font-medium text-fg">Resolution:</span> {dispute.resolutionNotes}
+        </p>
+      ) : null}
+    </Link>
   );
 }

@@ -1,0 +1,1011 @@
+diff --git a/apps/web/.env.example b/apps/web/.env.example
+index ca89da2..ec5b425 100644
+--- a/apps/web/.env.example
++++ b/apps/web/.env.example
+@@ -47,6 +47,7 @@ BRAWL_STARS_API_BASE_URL="https://api.brawlstars.com/v1"
+ # ----- Verifier runtime tuning -----
+ VERIFICATION_POLL_INTERVAL_MS="15000"
+ DUEL_VALIDITY_WINDOW_MIN="30"                # spec: duels expire after 30 min
++DISPUTE_WINDOW_HOURS="48"                    # how long after settlement a result stays contestable
+ QUEUE_SCHEMA="pgboss"                        # pg-boss schema name
+ 
+ # ----- Realtime (SSE) -----
+diff --git a/apps/web/src/app/(app)/profile/page.tsx b/apps/web/src/app/(app)/profile/page.tsx
+index 62defef..74013fd 100644
+--- a/apps/web/src/app/(app)/profile/page.tsx
++++ b/apps/web/src/app/(app)/profile/page.tsx
+@@ -1,8 +1,10 @@
+ import type { Metadata } from "next";
+ import Link from "next/link";
+-import { Swords } from "lucide-react";
++import { Swords, Flag } from "lucide-react";
+ import { getCurrentUser } from "@/server/auth/session";
+ import { getMyDuels } from "@/server/services/duel/my-duels";
++import { listUserDisputes, disputeWindowHours, type UserDisputeView } from "@/server/services/dispute/service";
++import { SolAmount } from "@/components/marketplace/sol-amount";
+ import { PageContainer, Section } from "@/components/ui/page-shell";
+ import { Card, CardContent } from "@/components/ui/card";
+ import { Badge, type BadgeProps } from "@/components/ui/badge";
+@@ -49,7 +51,7 @@ export default async function ProfilePage() {
+     );
+   }
+ 
+-  const { duels } = await getMyDuels(user.id);
++  const [{ duels }, disputes] = await Promise.all([getMyDuels(user.id), listUserDisputes(user.id)]);
+   const completed = duels.filter((d) => d.status === "COMPLETED" && d.youWon !== null);
+   const recentForm = completed.slice(0, 10).map((d) => d.youWon as boolean); // newest first
+ 
+@@ -151,6 +153,83 @@ export default async function ProfilePage() {
+           </div>
+         </Section>
+       </div>
++
++      {/* disputes — every review on the user's duels, raised by them, their opponent, or the system */}
++      <div className="mt-5">
++        <Section title="Disputes">
++          {disputes.length > 0 ? (
++            <div className="space-y-2.5">
++              {disputes.map((d) => (
++                <DisputeRow key={d.id} dispute={d} />
++              ))}
++            </div>
++          ) : (
++            <p className="text-body-sm text-muted">
++              No disputes — if a result ever looks wrong, you can contest it from the duel page for up
++              to {disputeWindowHours()} hours after it settles.
++            </p>
++          )}
++        </Section>
++      </div>
+     </PageContainer>
+   );
+ }
++
++// ─── Disputes section ─────────────────────────────────────────────────────────
++
++const DISPUTE_META: Record<string, { label: string; tone: BadgeProps["tone"] }> = {
++  OPEN: { label: "Under review", tone: "ember" },
++  UNDER_REVIEW: { label: "Under review", tone: "ember" },
++  RESOLVED_CREATOR_WIN: { label: "Resolved", tone: "victory" },
++  RESOLVED_OPPONENT_WIN: { label: "Resolved", tone: "victory" },
++  RESOLVED_REFUND: { label: "Refunded", tone: "neutral" },
++  REJECTED: { label: "Closed", tone: "neutral" },
++};
++
++const RAISED_BY_LABEL: Record<UserDisputeView["raisedBy"], string> = {
++  you: "Raised by you",
++  opponent: "Raised by your opponent",
++  system: "Flagged by verification",
++};
++
++function DisputeRow({ dispute }: { dispute: UserDisputeView }) {
++  const meta = DISPUTE_META[dispute.status] ?? { label: dispute.status, tone: "neutral" as const };
++  const raised = new Intl.DateTimeFormat("en-US", {
++    month: "short",
++    day: "numeric",
++    hour: "numeric",
++    minute: "2-digit",
++  }).format(new Date(dispute.createdAt));
++
++  return (
++    <Link
++      href={`/duels/${dispute.duelId}`}
++      className="block rounded-xl border border-border bg-surface-2/40 px-4 py-3.5 transition-colors hover:border-border-strong hover:bg-surface-2/70 focus-visible:focus-ring"
++    >
++      <div className="flex flex-wrap items-center justify-between gap-2">
++        <div className="flex min-w-0 items-center gap-2.5">
++          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-ember/12 text-ember" aria-hidden>
++            <Flag className="h-4 w-4" />
++          </span>
++          <div className="min-w-0">
++            <p className="flex flex-wrap items-center gap-x-2 text-body-sm font-medium text-fg">
++              <Badge tone={GAME_TONE[dispute.game]}>{GAME_LABEL[dispute.game]}</Badge>
++              <span className="font-mono text-caption text-faint tabular">#{dispute.duelShortCode}</span>
++              <SolAmount lamports={dispute.stakeLamports} className="text-muted" />
++            </p>
++            <p className="mt-0.5 truncate text-caption text-faint">
++              {RAISED_BY_LABEL[dispute.raisedBy]} · {raised}
++              {dispute.reason ? <> · {dispute.reason}</> : null}
++            </p>
++          </div>
++        </div>
++        <Badge tone={meta.tone}>{meta.label}</Badge>
++      </div>
++      {dispute.resolutionNotes && dispute.resolvedAt ? (
++        <p className="mt-2.5 border-t border-border pt-2.5 text-caption text-muted">
++          <span className="font-medium text-fg">Resolution:</span> {dispute.resolutionNotes}
++        </p>
++      ) : null}
++    </Link>
++  );
++}
+diff --git a/apps/web/src/app/admin/disputes/page.tsx b/apps/web/src/app/admin/disputes/page.tsx
+index c2dcea3..2810a8c 100644
+--- a/apps/web/src/app/admin/disputes/page.tsx
++++ b/apps/web/src/app/admin/disputes/page.tsx
+@@ -127,6 +127,11 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
+                 <option value="RESOLVED_REFUND">Refund both players</option>
+                 <option value="REJECTED">Reject dispute</option>
+               </select>
++              <p className="text-xs text-faint">
++                For a frozen (live) duel, rejecting refunds both stakes. For a contested result the
++                original outcome stands on reject — while a win for the other player reverses the
++                payout, and a refund voids the result and restores both players in full.
++              </p>
+             </div>
+ 
+             {/* Notes */}
+diff --git a/apps/web/src/app/api/admin/disputes/[id]/route.ts b/apps/web/src/app/api/admin/disputes/[id]/route.ts
+index 7022e2c..620147a 100644
+--- a/apps/web/src/app/api/admin/disputes/[id]/route.ts
++++ b/apps/web/src/app/api/admin/disputes/[id]/route.ts
+@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
+ import { prisma } from "@solrival/db"
+ import { requireAdmin } from "@/server/auth/session"
+ import { resolveDisputeSettlement } from "@/server/services/duel/settlement"
++import { publishDisputeResolved } from "@/lib/realtime/event-publisher"
+ import { handle, ok, fail } from "@/server/http/respond"
+ import { z } from "zod"
+ 
+@@ -30,8 +31,12 @@ export async function PATCH(
+       return fail("ALREADY_RESOLVED", "Dispute is already resolved", 409)
+     }
+ 
+-    // Move the money first: settle the winner or refund both players (credits or
+-    // on-chain, per the duel's funding mode). Idempotent — safe if retried.
++    // Move the money first: settle the winner or refund both players — or, for
++    // a dispute raised against an already-settled result, uphold / overturn /
++    // void it (see resolveDisputeSettlement). Idempotent — safe if retried. A
++    // clawback the original winner's balance can't cover surfaces here as a
++    // 409 (their withdrawals are frozen while the dispute is open, so waiting
++    // or resolving their other duels first always unblocks it).
+     await resolveDisputeSettlement(existing.duelId, body.outcome)
+ 
+     const updated = await prisma.dispute.update({
+@@ -59,6 +64,29 @@ export async function PATCH(
+       },
+     })
+ 
++    // Tell both players how it was resolved (post-commit; the bell is often the
++    // only signal — the counterparty may not be watching the duel page).
++    const participants = await prisma.duel.findUnique({
++      where: { id: existing.duelId },
++      select: {
++        creatorId: true,
++        opponentId: true,
++        winner: { select: { username: true } },
++      },
++    })
++    if (participants) {
++      const winnerTag = participants.winner?.username ?? null
++      for (const targetUserId of [participants.creatorId, participants.opponentId]) {
++        if (!targetUserId) continue
++        publishDisputeResolved({
++          duelId: existing.duelId,
++          resolution: body.outcome,
++          winnerTag,
++          targetUserId,
++        })
++      }
++    }
++
+     return ok({ data: updated })
+   })
+ }
+diff --git a/apps/web/src/app/api/duels/[duelId]/dispute/route.ts b/apps/web/src/app/api/duels/[duelId]/dispute/route.ts
+index 3028870..c0d2a7d 100644
+--- a/apps/web/src/app/api/duels/[duelId]/dispute/route.ts
++++ b/apps/web/src/app/api/duels/[duelId]/dispute/route.ts
+@@ -17,9 +17,13 @@ const raiseDisputeSchema = z.object({
+ });
+ 
+ /**
+- * POST /api/duels/:duelId/dispute — a participant reports a problem with a live
+- * or verifying duel. Freezes settlement (status → DISPUTED) until an admin
+- * resolves it as a win or a refund. One dispute per duel.
++ * POST /api/duels/:duelId/dispute — a participant reports a problem with a duel.
++ *
++ * Live/verifying duels freeze (status → DISPUTED, funds stay locked) until an
++ * admin resolves it as a win or a refund. Settled duels can be contested for a
++ * window after settlement (DISPUTE_WINDOW_HOURS, default 48h): the result
++ * stands but withdrawals for both players pause while the review is open, and
++ * the admin may uphold, overturn, or void it. One dispute per duel.
+  */
+ export async function POST(req: NextRequest, { params }: { params: Promise<{ duelId: string }> }) {
+   return handle(async () => {
+diff --git a/apps/web/src/app/api/duels/[duelId]/route.ts b/apps/web/src/app/api/duels/[duelId]/route.ts
+index 43466bf..eeede79 100644
+--- a/apps/web/src/app/api/duels/[duelId]/route.ts
++++ b/apps/web/src/app/api/duels/[duelId]/route.ts
+@@ -3,6 +3,7 @@ import { getDuelDetail, DuelNotFoundError } from "@/server/services/duel/repo";
+ import { expireIfLapsed } from "@/server/services/duel/service";
+ import { getCurrentUser } from "@/server/auth/session";
+ import { isValidUuid } from "@/server/guards/validate-uuid";
++import { disputeWindowHours } from "@/server/services/dispute/service";
+ import { handle, ok, fail } from "@/server/http/respond";
+ 
+ export const runtime = "nodejs";
+@@ -46,6 +47,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
+         createdAt: duel.createdAt.toISOString(),
+         winnerId: duel.winnerId,
+         winnerPayoutLamports: duel.winnerPayoutLamports?.toString() ?? null,
++        settledAt: duel.settledAt?.toISOString() ?? null,
++        // One dispute per duel; null until someone (or the system) raises one.
++        dispute: duel.dispute
++          ? { status: duel.dispute.status, createdAt: duel.dispute.createdAt.toISOString() }
++          : null,
++        // How long after settlement a result stays contestable — the client
++        // derives CTA visibility from this instead of hardcoding the policy.
++        disputeWindowHours: disputeWindowHours(),
+         creator: duel.creator,
+         opponent: duel.opponent,
+         rule: duel.rule,
+diff --git a/apps/web/src/components/duel/dispute-duel-modal.tsx b/apps/web/src/components/duel/dispute-duel-modal.tsx
+index 4c653f5..a8ebf38 100644
+--- a/apps/web/src/components/duel/dispute-duel-modal.tsx
++++ b/apps/web/src/components/duel/dispute-duel-modal.tsx
+@@ -12,7 +12,16 @@ import { ApiError } from "@/lib/api/client";
+ const MIN_REASON = 10;
+ const MAX_REASON = 500;
+ 
+-export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose: () => void }) {
++export function DisputeDuelModal({
++  duelId,
++  settled = false,
++  onClose,
++}: {
++  duelId: string;
++  /** True when the duel already settled — the dispute contests the RESULT, not a live match. */
++  settled?: boolean;
++  onClose: () => void;
++}) {
+   const queryClient = useQueryClient();
+   const [reason, setReason] = React.useState("");
+   const [touched, setTouched] = React.useState(false);
+@@ -25,7 +34,9 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
+     mutationFn: () => disputeDuel(duelId, trimmed),
+     onSuccess: () => {
+       toast.success("Dispute raised", {
+-        description: "Settlement is frozen while our team reviews the match.",
++        description: settled
++          ? "The result is under review — related payouts are frozen until our team resolves it."
++          : "Settlement is frozen while our team reviews the match.",
+       });
+       void queryClient.invalidateQueries({ queryKey: ["duel", duelId] });
+       onClose();
+@@ -70,7 +81,7 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
+         <div className="flex items-center justify-between border-b border-border px-5 py-4">
+           <h2 id={titleId} className="flex items-center gap-2 text-heading-3 text-fg">
+             <Flag className="h-4 w-4 text-ember" aria-hidden />
+-            Report a problem
++            {settled ? "Contest this result" : "Report a problem"}
+           </h2>
+           <button
+             type="button"
+@@ -85,9 +96,9 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
+ 
+         <div className="space-y-4 px-5 py-5">
+           <p className="text-body-sm text-muted">
+-            Raising a dispute freezes this duel — no one is paid until our team reviews the match
+-            and resolves it as a win or a full refund. Only use this if something genuinely went
+-            wrong (wrong result, opponent no-show, technical failure).
++            {settled
++              ? "Contesting the result sends this duel to our team for review. If the verified outcome is wrong, we'll correct it — the payout is reversed and awarded to the rightful winner, or both stakes are returned. Withdrawals for both players are paused while the review is open."
++              : "Raising a dispute freezes this duel — no one is paid until our team reviews the match and resolves it as a win or a full refund. Only use this if something genuinely went wrong (wrong result, opponent no-show, technical failure)."}
+           </p>
+ 
+           <div className="space-y-1.5">
+@@ -100,7 +111,11 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
+               onChange={(e) => setReason(e.target.value.slice(0, MAX_REASON))}
+               onBlur={() => setTouched(true)}
+               rows={4}
+-              placeholder="Describe the problem — include the match time and what you expected to happen."
++              placeholder={
++                settled
++                  ? "Explain why the result is wrong — include the match time and what actually happened."
++                  : "Describe the problem — include the match time and what you expected to happen."
++              }
+               className="w-full resize-none rounded-md border border-border-strong bg-surface px-3 py-2.5 text-body text-fg placeholder:text-faint outline-none transition-colors focus:border-rival/40 focus:ring-1 focus:ring-rival/40"
+             />
+             <div className="flex items-center justify-between">
+diff --git a/apps/web/src/components/duel/duel-detail-view.tsx b/apps/web/src/components/duel/duel-detail-view.tsx
+index 9c34987..0e565bc 100644
+--- a/apps/web/src/components/duel/duel-detail-view.tsx
++++ b/apps/web/src/components/duel/duel-detail-view.tsx
+@@ -100,10 +100,26 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+   const isParticipant = isCreator || (!!user && user.id === duel.opponent?.id);
+   const isOpen = duel.status === "WAITING_FOR_OPPONENT";
+   const canAccept = isOpen && !isCreator;
+-  // Participants can raise a dispute while the match is live or being verified
+-  // (mirrors the server-side state machine; COMPLETED is not disputable).
+-  const canDispute =
+-    isParticipant && (duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING");
++
++  // Dispute eligibility mirrors the server: participants can dispute while the
++  // match is live or verifying, AND for a window after settlement if they
++  // believe the verified result is wrong. One dispute per duel — once one
++  // exists (player- or system-raised) the CTA gives way to the review notice.
++  const disputeDeadline =
++    duel.status === "COMPLETED" && duel.settledAt
++      ? new Date(new Date(duel.settledAt).getTime() + duel.disputeWindowHours * 3_600_000)
++      : null;
++  const inDisputeWindow = disputeDeadline !== null && disputeDeadline.getTime() > Date.now();
++  const isLiveDisputable =
++    duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING";
++  const canDispute = isParticipant && !duel.dispute && (isLiveDisputable || inDisputeWindow);
++
++  // A settled duel with an unresolved dispute: the result stands for now, but
++  // both players should see it's under review (and that payouts are frozen).
++  const resultUnderReview =
++    duel.status === "COMPLETED" &&
++    duel.dispute !== null &&
++    (duel.dispute.status === "OPEN" || duel.dispute.status === "UNDER_REVIEW");
+ 
+   // For a finished duel, show the viewer's own result in place of the generic
+   // "Completed" badge: Win (green) or Loss (red). Non-participants still see status.
+@@ -194,17 +210,38 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+             </p>
+           ) : null}
+ 
++          {/* result under review — a settled duel with an open dispute */}
++          {resultUnderReview ? (
++            <p className="rounded-md border border-ember/30 bg-ember/[0.06] px-4 py-3 text-center text-body-sm text-muted">
++              This result is under review. Our team is looking into the dispute — payouts tied to this
++              duel stay frozen until it&apos;s resolved, and you&apos;ll be notified of the outcome.
++            </p>
++          ) : null}
++
+           {/* dispute affordance — quiet by design; a problem report, not a primary action */}
+           {canDispute ? (
+-            <div className="flex justify-center">
++            <div className="flex flex-col items-center gap-0.5">
+               <button
+                 type="button"
+                 onClick={() => setDisputing(true)}
+                 className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-faint transition-colors hover:text-ember focus-visible:focus-ring"
+               >
+                 <Flag className="h-3.5 w-3.5" aria-hidden />
+-                Something wrong with this match? Raise a dispute
++                {inDisputeWindow
++                  ? "Think this result is wrong? Contest it"
++                  : "Something wrong with this match? Raise a dispute"}
+               </button>
++              {inDisputeWindow && disputeDeadline ? (
++                <span className="text-caption text-faint">
++                  Results can be contested until{" "}
++                  {new Intl.DateTimeFormat("en-US", {
++                    month: "short",
++                    day: "numeric",
++                    hour: "numeric",
++                    minute: "2-digit",
++                  }).format(disputeDeadline)}
++                </span>
++              ) : null}
+             </div>
+           ) : null}
+ 
+@@ -227,7 +264,9 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?:
+         />
+       ) : null}
+ 
+-      {disputing ? <DisputeDuelModal duelId={duel.id} onClose={() => setDisputing(false)} /> : null}
++      {disputing ? (
++        <DisputeDuelModal duelId={duel.id} settled={duel.status === "COMPLETED"} onClose={() => setDisputing(false)} />
++      ) : null}
+     </>
+   );
+ }
+diff --git a/apps/web/src/hooks/useNotifications.ts b/apps/web/src/hooks/useNotifications.ts
+index b9ee930..7395801 100644
+--- a/apps/web/src/hooks/useNotifications.ts
++++ b/apps/web/src/hooks/useNotifications.ts
+@@ -122,6 +122,52 @@ function toNotification(
+         actionHref: `/duels/${event.duelId}`,
+       }
+ 
++    case 'dispute.raised':
++      return {
++        ...base,
++        title: event.postSettlement ? 'Result Contested' : 'Duel Disputed',
++        description: event.postSettlement
++          ? `${event.raisedByTag ?? 'Your opponent'} has contested the result of your duel. Our team will review it — related payouts are paused until then.`
++          : `${event.raisedByTag ?? 'Your opponent'} reported a problem with your duel. Settlement is frozen while our team reviews the match.`,
++        actionLabel: 'View duel',
++        actionHref: `/duels/${event.duelId}`,
++      }
++
++    case 'dispute.resolved': {
++      const isWinner = playerTag !== null && event.winnerTag === playerTag
++
++      if (event.resolution === 'RESOLVED_REFUND') {
++        return {
++          ...base,
++          title: 'Dispute Resolved — Refunded',
++          description: 'Our team reviewed the dispute and voided the duel. Both stakes have been returned in full.',
++          actionLabel: 'View duel',
++          actionHref: `/duels/${event.duelId}`,
++        }
++      }
++      if (event.resolution === 'REJECTED') {
++        return {
++          ...base,
++          title: 'Dispute Resolved',
++          description: event.winnerTag
++            ? `Our team reviewed the dispute and the original result stands — ${event.winnerTag} won the duel.`
++            : 'Our team reviewed the dispute and closed it. The duel outcome is unchanged.',
++          actionLabel: 'View duel',
++          actionHref: `/duels/${event.duelId}`,
++        }
++      }
++      // RESOLVED_CREATOR_WIN / RESOLVED_OPPONENT_WIN
++      return {
++        ...base,
++        title: isWinner ? 'Dispute Resolved — You Won 🏆' : 'Dispute Resolved',
++        description: isWinner
++          ? 'Our team reviewed the dispute and ruled in your favor. The pot has been credited to your wallet.'
++          : `Our team reviewed the dispute and ruled the duel for ${event.winnerTag ?? 'your opponent'}.`,
++        actionLabel: 'View duel',
++        actionHref: `/duels/${event.duelId}`,
++      }
++    }
++
+     case 'tournament.started':
+       return {
+         ...base,
+diff --git a/apps/web/src/lib/api/duels.ts b/apps/web/src/lib/api/duels.ts
+index 6953de4..c08846e 100644
+--- a/apps/web/src/lib/api/duels.ts
++++ b/apps/web/src/lib/api/duels.ts
+@@ -56,6 +56,12 @@ export interface DuelDetail {
+   winnerId: string | null;
+   /** Lamports paid to the winner at settlement, as a decimal string; null until then. */
+   winnerPayoutLamports: string | null;
++  /** When the duel settled (ISO); null until COMPLETED/REFUNDED. */
++  settledAt: string | null;
++  /** The duel's dispute, if one exists (one per duel; system- or player-raised). */
++  dispute: { status: string; createdAt: string } | null;
++  /** Server policy: hours after settlement a result stays contestable. */
++  disputeWindowHours: number;
+   creator: DuelParticipant;
+   opponent: DuelParticipant | null;
+   rule: { template: RuleTemplate; displayName: string } | null;
+diff --git a/apps/web/src/lib/notifications/meta.ts b/apps/web/src/lib/notifications/meta.ts
+index 6daeb44..912d2ed 100644
+--- a/apps/web/src/lib/notifications/meta.ts
++++ b/apps/web/src/lib/notifications/meta.ts
+@@ -1,4 +1,4 @@
+-import { Swords, ShieldCheck, Wallet, Trophy, type LucideIcon } from 'lucide-react'
++import { Swords, ShieldCheck, Wallet, Trophy, Flag, type LucideIcon } from 'lucide-react'
+ import type { RealtimeEventKind } from '@/lib/realtime/types'
+ 
+ export interface NotificationAccent {
+@@ -21,6 +21,9 @@ export function notificationAccent(kind: RealtimeEventKind): NotificationAccent
+   if (kind.startsWith('verification.')) {
+     return { icon: ShieldCheck, dotClass: 'bg-cr', chipClass: 'bg-cr/12 text-cr' }
+   }
++  if (kind.startsWith('dispute.')) {
++    return { icon: Flag, dotClass: 'bg-ember', chipClass: 'bg-ember/12 text-ember' }
++  }
+   if (kind === 'reward.paid') {
+     return { icon: Wallet, dotClass: 'bg-victory', chipClass: 'bg-victory/12 text-victory' }
+   }
+diff --git a/apps/web/src/lib/realtime/event-publisher.ts b/apps/web/src/lib/realtime/event-publisher.ts
+index 3dcb8e6..e20996e 100644
+--- a/apps/web/src/lib/realtime/event-publisher.ts
++++ b/apps/web/src/lib/realtime/event-publisher.ts
+@@ -19,6 +19,8 @@ import type {
+   VerificationStartedEvent,
+   VerificationCompletedEvent,
+   RewardPaidEvent,
++  DisputeRaisedEvent,
++  DisputeResolvedEvent,
+   TournamentStartedEvent,
+   TournamentMatchReadyEvent,
+   TournamentMatchCompletedEvent,
+@@ -66,6 +68,18 @@ export function publishRewardPaid(
+   getEventBus().publish({ ...meta(), kind: 'reward.paid', ...payload })
+ }
+ 
++export function publishDisputeRaised(
++  payload: Omit<DisputeRaisedEvent, 'id' | 'kind' | 'occurredAt'>,
++): void {
++  getEventBus().publish({ ...meta(), kind: 'dispute.raised', ...payload })
++}
++
++export function publishDisputeResolved(
++  payload: Omit<DisputeResolvedEvent, 'id' | 'kind' | 'occurredAt'>,
++): void {
++  getEventBus().publish({ ...meta(), kind: 'dispute.resolved', ...payload })
++}
++
+ export function publishTournamentStarted(
+   payload: Omit<TournamentStartedEvent, 'id' | 'kind' | 'occurredAt'>,
+ ): void {
+diff --git a/apps/web/src/lib/realtime/types.ts b/apps/web/src/lib/realtime/types.ts
+index 6c04992..198feb6 100644
+--- a/apps/web/src/lib/realtime/types.ts
++++ b/apps/web/src/lib/realtime/types.ts
+@@ -6,6 +6,8 @@ export type RealtimeEventKind =
+   | 'verification.started'
+   | 'verification.completed'
+   | 'reward.paid'
++  | 'dispute.raised'
++  | 'dispute.resolved'
+   | 'tournament.started'
+   | 'tournament.match_ready'
+   | 'tournament.match_completed'
+@@ -100,6 +102,24 @@ export interface TournamentCompletedEvent extends BaseEvent {
+   prizePoolSol: number
+ }
+ 
++export interface DisputeRaisedEvent extends BaseEvent {
++  kind: 'dispute.raised'
++  duelId: string
++  /** Username of the player who raised it; null when system-raised. */
++  raisedByTag: string | null
++  /** True when the duel had already settled (result under review, not frozen funds). */
++  postSettlement: boolean
++}
++
++export interface DisputeResolvedEvent extends BaseEvent {
++  kind: 'dispute.resolved'
++  duelId: string
++  /** Final dispute status: RESOLVED_CREATOR_WIN | RESOLVED_OPPONENT_WIN | RESOLVED_REFUND | REJECTED */
++  resolution: string
++  /** Username of the standing winner after resolution; null when refunded/voided. */
++  winnerTag: string | null
++}
++
+ // ─── Union ────────────────────────────────────────────────────────────────────
+ 
+ export type RealtimeEvent =
+@@ -108,6 +128,8 @@ export type RealtimeEvent =
+   | VerificationStartedEvent
+   | VerificationCompletedEvent
+   | RewardPaidEvent
++  | DisputeRaisedEvent
++  | DisputeResolvedEvent
+   | TournamentStartedEvent
+   | TournamentMatchReadyEvent
+   | TournamentMatchCompletedEvent
+diff --git a/apps/web/src/server/services/dispute/service.ts b/apps/web/src/server/services/dispute/service.ts
+index 56d00e4..98915ab 100644
+--- a/apps/web/src/server/services/dispute/service.ts
++++ b/apps/web/src/server/services/dispute/service.ts
+@@ -1,32 +1,61 @@
+ import { prisma, type Duel, type User } from "@solrival/db";
+ import { canTransition } from "@solrival/shared";
+ import { DuelError } from "@/server/services/duel/service";
++import { publishDisputeRaised } from "@/lib/realtime/event-publisher";
+ 
+ /**
+- * Duel statuses a participant may dispute from. Mirrors the state machine
+- * (ACCEPTED/ACTIVE/VERIFYING → DISPUTED); COMPLETED is deliberately excluded —
+- * settled money has moved, so post-settlement complaints go to support, not the
+- * self-serve flow.
++ * Duel statuses a participant may dispute while the match is in flight.
++ * Mirrors the state machine (ACCEPTED/ACTIVE/VERIFYING → DISPUTED): the duel
++ * freezes and settlement waits for admin review.
+  */
+-const DISPUTABLE: ReadonlySet<string> = new Set(["ACCEPTED", "ACTIVE", "VERIFYING"]);
++const DISPUTABLE_LIVE: ReadonlySet<string> = new Set(["ACCEPTED", "ACTIVE", "VERIFYING"]);
++
++/**
++ * How long after settlement a participant may still contest the result.
++ * Post-settlement disputes don't freeze the duel (the result stands unless an
++ * admin overturns or voids it) but DO freeze both participants' withdrawals
++ * while open — that's what makes a later clawback safe.
++ */
++export function disputeWindowHours(): number {
++  const raw = process.env["DISPUTE_WINDOW_HOURS"];
++  if (raw) {
++    const n = parseInt(raw, 10);
++    if (Number.isFinite(n) && n > 0) return n;
++  }
++  return 48;
++}
++
++/** True while a settled duel is still inside the post-settlement dispute window. */
++export function isWithinDisputeWindow(duel: Pick<Duel, "settledAt">, now = new Date()): boolean {
++  if (!duel.settledAt) return false;
++  return now.getTime() - duel.settledAt.getTime() <= disputeWindowHours() * 3_600_000;
++}
+ 
+ /**
+  * Raises a dispute on a duel:
+  *  - caller must be a participant (creator or opponent)
+- *  - duel must be in a disputable status
++ *  - duel must be live (ACCEPTED/ACTIVE/VERIFYING) — OR settled (COMPLETED)
++ *    within the post-settlement dispute window
+  *  - one dispute per duel (DB-unique on duelId)
+- *  - atomically: create the Dispute row AND move the duel to DISPUTED, with a
+- *    race guard so two concurrent raises (or a raise racing settlement) can
+- *    never double-apply.
+  *
+- * Settlement remains possible afterwards: the admin resolve flow settles or
+- * refunds from DISPUTED per the state machine.
++ * Live duels move atomically to DISPUTED (funds stay locked) with a race guard
++ * so two concurrent raises — or a raise racing settlement — can never
++ * double-apply. Settled duels keep their status: stats and history remain
++ * truthful, the open Dispute row is the review state, and the existing
++ * withdrawal guard (activeDisputeReason) freezes both players' withdrawals
++ * until the admin resolves it — upholding, overturning, or voiding the result.
++ *
++ * The counterparty is notified either way; they're the one affected by a
++ * frozen match or a contested result.
+  */
+ export async function raiseDispute(user: User, duel: Duel, reason: string): Promise<void> {
+   const isParticipant = duel.creatorId === user.id || duel.opponentId === user.id;
+   if (!isParticipant) throw new DuelError("FORBIDDEN", "Only duel participants can raise a dispute", 403);
+ 
+-  if (!DISPUTABLE.has(duel.status)) {
++  const live = DISPUTABLE_LIVE.has(duel.status);
++  const settled = duel.status === "COMPLETED";
++
++  if (!live && !settled) {
+     throw new DuelError(
+       "NOT_DISPUTABLE",
+       duel.status === "DISPUTED"
+@@ -35,20 +64,36 @@ export async function raiseDispute(user: User, duel: Duel, reason: string): Prom
+       409,
+     );
+   }
+-  // Defence-in-depth: never bypass the shared state machine.
+-  if (!canTransition(duel.status as Parameters<typeof canTransition>[0], "DISPUTED")) {
++  if (settled && !isWithinDisputeWindow(duel)) {
++    throw new DuelError(
++      "DISPUTE_WINDOW_CLOSED",
++      `Results can be contested up to ${disputeWindowHours()} hours after settlement — this window has closed`,
++      409,
++    );
++  }
++  // Defence-in-depth for the live path: never bypass the shared state machine.
++  if (live && !canTransition(duel.status as Parameters<typeof canTransition>[0], "DISPUTED")) {
+     throw new DuelError("NOT_DISPUTABLE", "This duel can no longer be disputed", 409);
+   }
+ 
+   try {
+     await prisma.$transaction(async (tx) => {
+-      // Claim the transition first — if the duel already left `status` (settled,
+-      // refunded, or disputed by the other player) this fails and we roll back.
+-      const moved = await tx.duel.updateMany({
+-        where: { id: duel.id, status: duel.status },
+-        data: { status: "DISPUTED" },
+-      });
+-      if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++      if (live) {
++        // Claim the transition first — if the duel already left `status`
++        // (settled, refunded, or disputed by the other player) this fails and
++        // we roll back.
++        const moved = await tx.duel.updateMany({
++          where: { id: duel.id, status: duel.status },
++          data: { status: "DISPUTED" },
++        });
++        if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++      } else {
++        // Settled path: re-check the row inside the transaction so a raise
++        // racing an admin refund/overturn can't attach to a stale snapshot.
++        const fresh = await tx.duel.findUnique({ where: { id: duel.id }, select: { status: true } });
++        if (fresh?.status !== "COMPLETED")
++          throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++      }
+ 
+       await tx.dispute.create({
+         data: {
+@@ -66,4 +111,62 @@ export async function raiseDispute(user: User, duel: Duel, reason: string): Prom
+     }
+     throw e;
+   }
++
++  // Notify the counterparty (post-commit, so a rolled-back raise never emits).
++  const counterpartyId = duel.creatorId === user.id ? duel.opponentId : duel.creatorId;
++  if (counterpartyId) {
++    publishDisputeRaised({
++      duelId: duel.id,
++      raisedByTag: user.username,
++      postSettlement: settled,
++      targetUserId: counterpartyId,
++    });
++  }
++}
++
++// ─── User-facing dispute list (profile) ───────────────────────────────────────
++
++export interface UserDisputeView {
++  id: string;
++  duelId: string;
++  duelShortCode: string;
++  game: "CLASH_ROYALE" | "BRAWL_STARS";
++  stakeLamports: string;
++  status: string; // DisputeStatus
++  reason: string | null;
++  /** "you" | "opponent" | "system" relative to the viewing user. */
++  raisedBy: "you" | "opponent" | "system";
++  resolutionNotes: string | null;
++  createdAt: Date;
++  resolvedAt: Date | null;
++}
++
++/**
++ * Disputes on any duel the user participates in, newest first — powers the
++ * Disputes section on the profile page. Includes system-raised disputes
++ * (verification timeouts) since those also freeze the user's funds.
++ */
++export async function listUserDisputes(userId: string, limit = 20): Promise<UserDisputeView[]> {
++  const rows = await prisma.dispute.findMany({
++    where: { duel: { OR: [{ creatorId: userId }, { opponentId: userId }] } },
++    orderBy: { createdAt: "desc" },
++    take: limit,
++    include: {
++      duel: { select: { id: true, shortCode: true, game: true, stakeLamports: true } },
++    },
++  });
++
++  return rows.map((d) => ({
++    id: d.id,
++    duelId: d.duel.id,
++    duelShortCode: d.duel.shortCode,
++    game: d.duel.game,
++    stakeLamports: d.duel.stakeLamports.toString(),
++    status: d.status,
++    reason: d.reason,
++    raisedBy: d.raisedById === null ? "system" : d.raisedById === userId ? "you" : "opponent",
++    resolutionNotes: d.resolutionNotes,
++    createdAt: d.createdAt,
++    resolvedAt: d.resolvedAt,
++  }));
+ }
+diff --git a/apps/web/src/server/services/duel/credit-duel.ts b/apps/web/src/server/services/duel/credit-duel.ts
+index 0a6ef6b..e9b3539 100644
+--- a/apps/web/src/server/services/duel/credit-duel.ts
++++ b/apps/web/src/server/services/duel/credit-duel.ts
+@@ -385,3 +385,151 @@ export async function refundCreditDuel(duelId: string): Promise<Duel> {
+ 
+   return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
+ }
++
++// ─── Post-settlement reversal (admin dispute resolution only) ─────────────────
++
++/**
++ * Overturns a settled credit duel in favour of `newWinnerId` — the admin has
++ * ruled that automatic verification paid the wrong player.
++ *
++ * Atomically: claws the net reward back from the original winner's available
++ * balance, credits it to the new winner, flips both players' win/loss records
++ * and lifetime-won stats, and repoints `winnerId`. The duel stays COMPLETED —
++ * the result stands, just for the other player. The platform rake is unchanged.
++ *
++ * Idempotent: if `winnerId` already equals `newWinnerId` (retry, or the admin
++ * upheld the original result) this is a no-op.
++ *
++ * Throws CreditError(INSUFFICIENT_FUNDS) if the original winner's available
++ * balance can't cover the clawback (e.g. they staked it on another duel).
++ * Withdrawals are frozen for both participants while the dispute is open, so
++ * this can only happen from credits re-locked in play — the admin resolves
++ * that duel first or waits, then retries. We never allow negative balances.
++ */
++export async function overturnCreditSettlement(duelId: string, newWinnerId: string): Promise<Duel> {
++  const duel = await prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
++  if (duel.fundingMode !== "CREDITS") throw new DuelError("WRONG_MODE", "Not a credit duel", 400);
++  if (duel.status !== "COMPLETED" || !duel.winnerId || !duel.opponentId || duel.settledAt === null)
++    throw new DuelError("NOT_SETTLED", "Only a settled duel can be overturned", 409);
++  if (newWinnerId !== duel.creatorId && newWinnerId !== duel.opponentId)
++    throw new DuelError("BAD_WINNER", "Winner must be a participant", 400);
++  if (duel.winnerId === newWinnerId) return duel; // upheld / already overturned — idempotent
++
++  const originalWinnerId = duel.winnerId;
++  const stake = duel.stakeLamports;
++  const pot = stake * 2n;
++  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
++  const reward = pot - rake;
++  const netWinnings = reward - stake; // lifetime-won delta applied at settlement
++
++  await prisma.$transaction(async (tx) => {
++    // Claim: repoint the winner only if the settlement we read still stands.
++    const moved = await tx.duel.updateMany({
++      where: { id: duelId, status: "COMPLETED", winnerId: originalWinnerId },
++      data: { winnerId: newWinnerId },
++    });
++    if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++
++    await lockBalances(tx, [originalWinnerId, newWinnerId]);
++
++    // Claw the paid reward back from the player verification wrongly credited.
++    await applyEntry(tx, {
++      userId: originalWinnerId,
++      type: "ADMIN_ADJUSTMENT",
++      idempotencyKey: `duel-overturn-clawback:${duelId}`,
++      deltaAvailable: -reward,
++      lifetimeWon: -netWinnings,
++      duelId,
++      memo: "Duel result overturned by dispute review — payout reversed",
++    });
++    // Pay the rightful winner the same net reward.
++    await applyEntry(tx, {
++      userId: newWinnerId,
++      type: "ADMIN_ADJUSTMENT",
++      idempotencyKey: `duel-overturn-payout:${duelId}`,
++      deltaAvailable: reward,
++      lifetimeWon: netWinnings,
++      duelId,
++      memo: "Duel result overturned by dispute review — pot credited (net of platform rake)",
++    });
++
++    // Flip the denormalized records set at settlement.
++    await tx.user.update({
++      where: { id: originalWinnerId },
++      data: { wins: { decrement: 1 }, losses: { increment: 1 } },
++    });
++    await tx.user.update({
++      where: { id: newWinnerId },
++      data: { wins: { increment: 1 }, losses: { decrement: 1 } },
++    });
++  });
++
++  return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
++}
++
++/**
++ * Voids a settled credit duel — the admin has ruled no fair result exists.
++ *
++ * Atomically: claws back the original winner's net gain, returns the loser's
++ * forfeited stake, gives up the platform rake (both players end exactly where
++ * they started), reverts the win/loss records, and moves the duel
++ * COMPLETED → REFUNDED with the result cleared.
++ *
++ * Idempotent via the status claim: a duel already REFUNDED returns as-is.
++ * Same INSUFFICIENT_FUNDS semantics as {@link overturnCreditSettlement}.
++ */
++export async function refundSettledCreditDuel(duelId: string): Promise<Duel> {
++  const duel = await prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
++  if (duel.status === "REFUNDED") return duel; // idempotent
++  if (duel.fundingMode !== "CREDITS") throw new DuelError("WRONG_MODE", "Not a credit duel", 400);
++  if (duel.status !== "COMPLETED" || !duel.winnerId || !duel.opponentId || duel.settledAt === null)
++    throw new DuelError("NOT_SETTLED", "Only a settled duel can be voided", 409);
++
++  const winnerId = duel.winnerId;
++  const loserId = winnerId === duel.creatorId ? duel.opponentId : duel.creatorId;
++  const stake = duel.stakeLamports;
++  const pot = stake * 2n;
++  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
++  const reward = pot - rake;
++  const netWinnings = reward - stake;
++
++  await prisma.$transaction(async (tx) => {
++    const moved = await tx.duel.updateMany({
++      where: { id: duelId, status: "COMPLETED", winnerId },
++      data: {
++        status: "REFUNDED",
++        winnerId: null,
++        winnerPayoutLamports: null,
++        feeCollectedLamports: null,
++      },
++    });
++    if (moved.count !== 1) throw new DuelError("CONFLICT", "Duel state changed — refresh and try again", 409);
++
++    await lockBalances(tx, [winnerId, loserId]);
++
++    // Winner returns their net gain (payout minus the stake they'd committed).
++    await applyEntry(tx, {
++      userId: winnerId,
++      type: "ADMIN_ADJUSTMENT",
++      idempotencyKey: `duel-void-winner:${duelId}`,
++      deltaAvailable: -netWinnings,
++      lifetimeWon: -netWinnings,
++      duelId,
++      memo: "Duel voided by dispute review — net winnings reversed, stake returned",
++    });
++    // Loser gets their forfeited stake back in full (platform returns the rake).
++    await applyEntry(tx, {
++      userId: loserId,
++      type: "ADMIN_ADJUSTMENT",
++      idempotencyKey: `duel-void-loser:${duelId}`,
++      deltaAvailable: stake,
++      duelId,
++      memo: "Duel voided by dispute review — stake returned",
++    });
++
++    await tx.user.update({ where: { id: winnerId }, data: { wins: { decrement: 1 } } });
++    await tx.user.update({ where: { id: loserId }, data: { losses: { decrement: 1 } } });
++  });
++
++  return prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
++}
+diff --git a/apps/web/src/server/services/duel/repo.ts b/apps/web/src/server/services/duel/repo.ts
+index 6c5d186..b0308bf 100644
+--- a/apps/web/src/server/services/duel/repo.ts
++++ b/apps/web/src/server/services/duel/repo.ts
+@@ -36,6 +36,9 @@ export function getDuelDetail(id: string) {
+       creator: { select: { id: true, username: true, walletAddress: true } },
+       opponent: { select: { id: true, username: true, walletAddress: true } },
+       rule: true,
++      // Lets the detail page show "result under review" and hide the dispute
++      // CTA once one exists (one dispute per duel).
++      dispute: { select: { status: true, createdAt: true, raisedById: true } },
+     },
+   });
+ }
+diff --git a/apps/web/src/server/services/duel/settlement.ts b/apps/web/src/server/services/duel/settlement.ts
+index dfb4703..929f50c 100644
+--- a/apps/web/src/server/services/duel/settlement.ts
++++ b/apps/web/src/server/services/duel/settlement.ts
+@@ -1,6 +1,6 @@
+ import "server-only";
+ import { prisma, type Duel } from "@solrival/db";
+-import { settleCreditDuel, refundCreditDuel } from "./credit-duel";
++import { settleCreditDuel, refundCreditDuel, overturnCreditSettlement, refundSettledCreditDuel } from "./credit-duel";
+ 
+ /**
+  * Unified duel settlement orchestrator.
+@@ -105,15 +105,53 @@ export async function markDuelDisputed(duelId: string): Promise<void> {
+ }
+ 
+ /**
+- * Applies the money side of an admin dispute resolution. Maps the dispute
++ * Applies the money side of an admin dispute resolution.
++ *
++ * PRE-settlement (duel frozen in DISPUTED, funds still locked): maps the
+  * outcome to a settlement (winner paid) or a refund. REJECTED is treated as a
+  * no-fault refund so funds are never stranded.
++ *
++ * POST-settlement (duel COMPLETED — the dispute was raised against the result
++ * within the dispute window): money already moved, so the branches differ:
++ *   • REJECTED, or a win for the player who already won → verdict upheld, no
++ *     fund movement.
++ *   • a win for the OTHER player → full ledger reversal (clawback + re-credit,
++ *     records flipped) via overturnCreditSettlement.
++ *   • RESOLVED_REFUND → result voided; both players restored to their pre-duel
++ *     balances (platform returns the rake) via refundSettledCreditDuel.
++ * Withdrawals are frozen for both participants while the dispute is open, so a
++ * clawback can only fail if the credits were re-staked — surfaced to the admin
++ * as a clear 409 rather than ever allowing a negative balance.
+  */
+ export async function resolveDisputeSettlement(
+   duelId: string,
+   outcome: "RESOLVED_CREATOR_WIN" | "RESOLVED_OPPONENT_WIN" | "RESOLVED_REFUND" | "REJECTED",
+ ): Promise<Duel> {
+   const duel = await prisma.duel.findUniqueOrThrow({ where: { id: duelId } });
++
++  // ── Post-settlement path: the result exists; uphold, overturn, or void it ──
++  if (duel.status === "COMPLETED") {
++    if (duel.fundingMode !== "CREDITS") {
++      throw new SettlementError(
++        "UNSUPPORTED_MODE",
++        "Post-settlement reversal is only supported for credit duels",
++        409,
++      );
++    }
++    switch (outcome) {
++      case "REJECTED":
++        return duel; // verdict stands untouched
++      case "RESOLVED_CREATOR_WIN":
++        return overturnCreditSettlement(duelId, duel.creatorId); // no-op if creator already won
++      case "RESOLVED_OPPONENT_WIN":
++        if (!duel.opponentId) throw new SettlementError("NO_OPPONENT", "Duel has no opponent to pay", 409);
++        return overturnCreditSettlement(duelId, duel.opponentId); // no-op if opponent already won
++      case "RESOLVED_REFUND":
++        return refundSettledCreditDuel(duelId);
++    }
++  }
++
++  // ── Pre-settlement path: funds still locked; settle or refund normally ─────
+   switch (outcome) {
+     case "RESOLVED_CREATOR_WIN":
+       return applyVerifiedWinner(duelId, duel.creatorId);
+diff --git a/packages/shared/src/duel/state-machine.ts b/packages/shared/src/duel/state-machine.ts
+index 2c9df37..6c49873 100644
+--- a/packages/shared/src/duel/state-machine.ts
++++ b/packages/shared/src/duel/state-machine.ts
+@@ -27,7 +27,11 @@ const TRANSITIONS: Record<DuelStatus, readonly DuelStatus[]> = {
+   ACTIVE: ["VERIFYING", "DISPUTED"],
+   VERIFYING: ["COMPLETED", "DISPUTED", "REFUNDED"],
+   DISPUTED: ["COMPLETED", "REFUNDED"],
+-  COMPLETED: [],
++  // COMPLETED is settled, not immutable: within the post-settlement dispute
++  // window an admin may void the result (→ REFUNDED, with a full ledger
++  // reversal). Overturning the winner keeps the duel COMPLETED (result stands,
++  // just for the other player), so no other transition is needed.
++  COMPLETED: ["REFUNDED"],
+   EXPIRED: [],
+   CANCELLED: [],
+   REFUNDED: [],

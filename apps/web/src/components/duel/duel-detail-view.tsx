@@ -100,10 +100,26 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
   const isParticipant = isCreator || (!!user && user.id === duel.opponent?.id);
   const isOpen = duel.status === "WAITING_FOR_OPPONENT";
   const canAccept = isOpen && !isCreator;
-  // Participants can raise a dispute while the match is live or being verified
-  // (mirrors the server-side state machine; COMPLETED is not disputable).
-  const canDispute =
-    isParticipant && (duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING");
+
+  // Dispute eligibility mirrors the server: participants can dispute while the
+  // match is live or verifying, AND for a window after settlement if they
+  // believe the verified result is wrong. One dispute per duel — once one
+  // exists (player- or system-raised) the CTA gives way to the review notice.
+  const disputeDeadline =
+    duel.status === "COMPLETED" && duel.settledAt
+      ? new Date(new Date(duel.settledAt).getTime() + duel.disputeWindowHours * 3_600_000)
+      : null;
+  const inDisputeWindow = disputeDeadline !== null && disputeDeadline.getTime() > Date.now();
+  const isLiveDisputable =
+    duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING";
+  const canDispute = isParticipant && !duel.dispute && (isLiveDisputable || inDisputeWindow);
+
+  // A settled duel with an unresolved dispute: the result stands for now, but
+  // both players should see it's under review (and that payouts are frozen).
+  const resultUnderReview =
+    duel.status === "COMPLETED" &&
+    duel.dispute !== null &&
+    (duel.dispute.status === "OPEN" || duel.dispute.status === "UNDER_REVIEW");
 
   // For a finished duel, show the viewer's own result in place of the generic
   // "Completed" badge: Win (green) or Loss (red). Non-participants still see status.
@@ -194,17 +210,38 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
             </p>
           ) : null}
 
+          {/* result under review — a settled duel with an open dispute */}
+          {resultUnderReview ? (
+            <p className="rounded-md border border-ember/30 bg-ember/[0.06] px-4 py-3 text-center text-body-sm text-muted">
+              This result is under review. Our team is looking into the dispute — payouts tied to this
+              duel stay frozen until it&apos;s resolved, and you&apos;ll be notified of the outcome.
+            </p>
+          ) : null}
+
           {/* dispute affordance — quiet by design; a problem report, not a primary action */}
           {canDispute ? (
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => setDisputing(true)}
                 className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-caption text-faint transition-colors hover:text-ember focus-visible:focus-ring"
               >
                 <Flag className="h-3.5 w-3.5" aria-hidden />
-                Something wrong with this match? Raise a dispute
+                {inDisputeWindow
+                  ? "Think this result is wrong? Contest it"
+                  : "Something wrong with this match? Raise a dispute"}
               </button>
+              {inDisputeWindow && disputeDeadline ? (
+                <span className="text-caption text-faint">
+                  Results can be contested until{" "}
+                  {new Intl.DateTimeFormat("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(disputeDeadline)}
+                </span>
+              ) : null}
             </div>
           ) : null}
 
@@ -227,7 +264,9 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
         />
       ) : null}
 
-      {disputing ? <DisputeDuelModal duelId={duel.id} onClose={() => setDisputing(false)} /> : null}
+      {disputing ? (
+        <DisputeDuelModal duelId={duel.id} settled={duel.status === "COMPLETED"} onClose={() => setDisputing(false)} />
+      ) : null}
     </>
   );
 }

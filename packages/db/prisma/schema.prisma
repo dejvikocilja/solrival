@@ -271,6 +271,9 @@ model User {
   withdrawals        WithdrawalRequest[]
   reviewedWithdrawals WithdrawalRequest[] @relation("WithdrawalReviewer")
 
+  // notifications (persisted bell items)
+  notifications      Notification[]
+
   // referrals
   referredBy         User?              @relation("UserReferral", fields: [referredById], references: [id], onDelete: SetNull)
   referredUsers      User[]             @relation("UserReferral")
@@ -281,6 +284,25 @@ model User {
   @@index([createdAt])
   @@index([referredById])
   @@map("users")
+}
+
+/// Persisted copy of a targeted realtime event, so the bell survives refreshes.
+/// `id` IS the realtime event UUID — replayed publishes are idempotent no-ops.
+/// `payload` stores the full RealtimeEvent verbatim; the client re-renders it
+/// through the same factory that renders live SSE events, keeping copy in one
+/// place. Broadcast events (no targetUserId) are deliberately not persisted.
+model Notification {
+  id        String    @id @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  kind      String
+  payload   Json
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
 }
 
 /// A player's linked in-game account. Trophies/level/win-rate power marketplace

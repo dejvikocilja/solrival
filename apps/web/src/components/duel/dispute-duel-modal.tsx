@@ -12,7 +12,16 @@ import { ApiError } from "@/lib/api/client";
 const MIN_REASON = 10;
 const MAX_REASON = 500;
 
-export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose: () => void }) {
+export function DisputeDuelModal({
+  duelId,
+  settled = false,
+  onClose,
+}: {
+  duelId: string;
+  /** True when the duel already settled — the dispute contests the RESULT, not a live match. */
+  settled?: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const [reason, setReason] = React.useState("");
   const [touched, setTouched] = React.useState(false);
@@ -25,7 +34,9 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
     mutationFn: () => disputeDuel(duelId, trimmed),
     onSuccess: () => {
       toast.success("Dispute raised", {
-        description: "Settlement is frozen while our team reviews the match.",
+        description: settled
+          ? "The result is under review — related payouts are frozen until our team resolves it."
+          : "Settlement is frozen while our team reviews the match.",
       });
       void queryClient.invalidateQueries({ queryKey: ["duel", duelId] });
       onClose();
@@ -70,7 +81,7 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 id={titleId} className="flex items-center gap-2 text-heading-3 text-fg">
             <Flag className="h-4 w-4 text-ember" aria-hidden />
-            Report a problem
+            {settled ? "Contest this result" : "Report a problem"}
           </h2>
           <button
             type="button"
@@ -85,9 +96,9 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
 
         <div className="space-y-4 px-5 py-5">
           <p className="text-body-sm text-muted">
-            Raising a dispute freezes this duel — no one is paid until our team reviews the match
-            and resolves it as a win or a full refund. Only use this if something genuinely went
-            wrong (wrong result, opponent no-show, technical failure).
+            {settled
+              ? "Contesting the result sends this duel to our team for review. If the verified outcome is wrong, we'll correct it — the payout is reversed and awarded to the rightful winner, or both stakes are returned. Withdrawals for both players are paused while the review is open."
+              : "Raising a dispute freezes this duel — no one is paid until our team reviews the match and resolves it as a win or a full refund. Only use this if something genuinely went wrong (wrong result, opponent no-show, technical failure)."}
           </p>
 
           <div className="space-y-1.5">
@@ -100,7 +111,11 @@ export function DisputeDuelModal({ duelId, onClose }: { duelId: string; onClose:
               onChange={(e) => setReason(e.target.value.slice(0, MAX_REASON))}
               onBlur={() => setTouched(true)}
               rows={4}
-              placeholder="Describe the problem — include the match time and what you expected to happen."
+              placeholder={
+                settled
+                  ? "Explain why the result is wrong — include the match time and what actually happened."
+                  : "Describe the problem — include the match time and what you expected to happen."
+              }
               className="w-full resize-none rounded-md border border-border-strong bg-surface px-3 py-2.5 text-body text-fg placeholder:text-faint outline-none transition-colors focus:border-rival/40 focus:ring-1 focus:ring-rival/40"
             />
             <div className="flex items-center justify-between">

@@ -1,4 +1,4 @@
-import { Swords, ShieldCheck, Wallet, Trophy, type LucideIcon } from 'lucide-react'
+import { Swords, ShieldCheck, Wallet, Trophy, Flag, type LucideIcon } from 'lucide-react'
 import type { RealtimeEventKind } from '@/lib/realtime/types'
 
 export interface NotificationAccent {
@@ -20,6 +20,9 @@ export function notificationAccent(kind: RealtimeEventKind): NotificationAccent 
   }
   if (kind.startsWith('verification.')) {
     return { icon: ShieldCheck, dotClass: 'bg-cr', chipClass: 'bg-cr/12 text-cr' }
+  }
+  if (kind.startsWith('dispute.')) {
+    return { icon: Flag, dotClass: 'bg-ember', chipClass: 'bg-ember/12 text-ember' }
   }
   if (kind === 'reward.paid') {
     return { icon: Wallet, dotClass: 'bg-victory', chipClass: 'bg-victory/12 text-victory' }

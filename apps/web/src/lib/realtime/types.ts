@@ -6,6 +6,8 @@ export type RealtimeEventKind =
   | 'verification.started'
   | 'verification.completed'
   | 'reward.paid'
+  | 'dispute.raised'
+  | 'dispute.resolved'
   | 'tournament.started'
   | 'tournament.match_ready'
   | 'tournament.match_completed'
@@ -56,7 +58,7 @@ export interface VerificationCompletedEvent extends BaseEvent {
   kind: 'verification.completed'
   duelId: string
   winnerTag: string | null
-  status: 'verified' | 'disputed' | 'timeout'
+  status: 'verified' | 'disputed' | 'timeout' | 'refunded'
   battleTime: string | null
 }
 
@@ -100,6 +102,24 @@ export interface TournamentCompletedEvent extends BaseEvent {
   prizePoolSol: number
 }
 
+export interface DisputeRaisedEvent extends BaseEvent {
+  kind: 'dispute.raised'
+  duelId: string
+  /** Username of the player who raised it; null when system-raised. */
+  raisedByTag: string | null
+  /** True when the duel had already settled (result under review, not frozen funds). */
+  postSettlement: boolean
+}
+
+export interface DisputeResolvedEvent extends BaseEvent {
+  kind: 'dispute.resolved'
+  duelId: string
+  /** Final dispute status: RESOLVED_CREATOR_WIN | RESOLVED_OPPONENT_WIN | RESOLVED_REFUND | REJECTED */
+  resolution: string
+  /** Username of the standing winner after resolution; null when refunded/voided. */
+  winnerTag: string | null
+}
+
 // ─── Union ────────────────────────────────────────────────────────────────────
 
 export type RealtimeEvent =
@@ -108,6 +128,8 @@ export type RealtimeEvent =
   | VerificationStartedEvent
   | VerificationCompletedEvent
   | RewardPaidEvent
+  | DisputeRaisedEvent
+  | DisputeResolvedEvent
   | TournamentStartedEvent
   | TournamentMatchReadyEvent
   | TournamentMatchCompletedEvent

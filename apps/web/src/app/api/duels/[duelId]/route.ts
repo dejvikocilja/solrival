@@ -3,6 +3,7 @@ import { getDuelDetail, DuelNotFoundError } from "@/server/services/duel/repo";
 import { expireIfLapsed } from "@/server/services/duel/service";
 import { getCurrentUser } from "@/server/auth/session";
 import { isValidUuid } from "@/server/guards/validate-uuid";
+import { disputeWindowHours } from "@/server/services/dispute/service";
 import { handle, ok, fail } from "@/server/http/respond";
 
 export const runtime = "nodejs";
@@ -46,6 +47,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
         createdAt: duel.createdAt.toISOString(),
         winnerId: duel.winnerId,
         winnerPayoutLamports: duel.winnerPayoutLamports?.toString() ?? null,
+        settledAt: duel.settledAt?.toISOString() ?? null,
+        // One dispute per duel; null until someone (or the system) raises one.
+        dispute: duel.dispute
+          ? { status: duel.dispute.status, createdAt: duel.dispute.createdAt.toISOString() }
+          : null,
+        // How long after settlement a result stays contestable — the client
+        // derives CTA visibility from this instead of hardcoding the policy.
+        disputeWindowHours: disputeWindowHours(),
         creator: duel.creator,
         opponent: duel.opponent,
         rule: duel.rule,

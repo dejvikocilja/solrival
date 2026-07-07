@@ -127,6 +127,11 @@ function ResolveModal({ dispute, onSave, onClose }: ResolveModalProps) {
                 <option value="RESOLVED_REFUND">Refund both players</option>
                 <option value="REJECTED">Reject dispute</option>
               </select>
+              <p className="text-xs text-faint">
+                For a frozen (live) duel, rejecting refunds both stakes. For a contested result the
+                original outcome stands on reject — while a win for the other player reverses the
+                payout, and a refund voids the result and restores both players in full.
+              </p>
             </div>
 
             {/* Notes */}

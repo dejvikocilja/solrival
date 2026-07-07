@@ -19,6 +19,7 @@ export async function runVerificationSweep(limit = 25): Promise<{
   checked: number;
   verified: number;
   disputed: number;
+  refunded: number;
   pending: number;
   errored: number;
 }> {
@@ -31,6 +32,7 @@ export async function runVerificationSweep(limit = 25): Promise<{
 
   let verified = 0;
   let disputed = 0;
+  let refunded = 0;
   let pending = 0;
   let errored = 0;
 
@@ -38,6 +40,7 @@ export async function runVerificationSweep(limit = 25): Promise<{
     try {
       const result = await verifyDuelOnce(id);
       if (result.status === "verified") verified += 1;
+      else if (result.status === "refunded") refunded += 1;
       else if (result.status === "timeout" || result.status === "disputed") disputed += 1;
       else if (result.status === "error") errored += 1;
       else pending += 1;
@@ -51,5 +54,5 @@ export async function runVerificationSweep(limit = 25): Promise<{
     }
   }
 
-  return { checked: duels.length, verified, disputed, pending, errored };
+  return { checked: duels.length, verified, disputed, refunded, pending, errored };
 }

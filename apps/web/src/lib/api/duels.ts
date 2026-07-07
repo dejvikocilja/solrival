@@ -56,6 +56,12 @@ export interface DuelDetail {
   winnerId: string | null;
   /** Lamports paid to the winner at settlement, as a decimal string; null until then. */
   winnerPayoutLamports: string | null;
+  /** When the duel settled (ISO); null until COMPLETED/REFUNDED. */
+  settledAt: string | null;
+  /** The duel's dispute, if one exists (one per duel; system- or player-raised). */
+  dispute: { status: string; createdAt: string } | null;
+  /** Server policy: hours after settlement a result stays contestable. */
+  disputeWindowHours: number;
   creator: DuelParticipant;
   opponent: DuelParticipant | null;
   rule: { template: RuleTemplate; displayName: string } | null;

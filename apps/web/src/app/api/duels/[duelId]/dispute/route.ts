@@ -17,9 +17,13 @@ const raiseDisputeSchema = z.object({
 });
 
 /**
- * POST /api/duels/:duelId/dispute — a participant reports a problem with a live
- * or verifying duel. Freezes settlement (status → DISPUTED) until an admin
- * resolves it as a win or a refund. One dispute per duel.
+ * POST /api/duels/:duelId/dispute — a participant reports a problem with a duel.
+ *
+ * Live/verifying duels freeze (status → DISPUTED, funds stay locked) until an
+ * admin resolves it as a win or a refund. Settled duels can be contested for a
+ * window after settlement (DISPUTE_WINDOW_HOURS, default 48h): the result
+ * stands but withdrawals for both players pause while the review is open, and
+ * the admin may uphold, overturn, or void it. One dispute per duel.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ duelId: string }> }) {
   return handle(async () => {
