@@ -23,3 +23,7 @@ result-authority*.json
 .DS_Store
 coverage/
 *.log
+
+# build artifacts / local patch files
+*.tsbuildinfo
+/*.patch

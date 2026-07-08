@@ -33,6 +33,13 @@ const NAV_COLUMNS: Array<{ title: string; links: Array<{ label: string; href: st
       { label: "Settings", href: "/settings" },
     ],
   },
+  {
+    title: "Legal",
+    links: [
+      { label: "Terms of Service", href: "/terms" },
+      { label: "Privacy Policy", href: "/privacy" },
+    ],
+  },
 ];
 
 // Surfaces with their own chrome never show the marketing footer.

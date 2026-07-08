@@ -1,10 +1,11 @@
 import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { prisma, type Duel, type User } from "@solrival/db";
-import { isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/shared";
+import { duelEconomics, isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/shared";
 import { applyEntry, lockBalances, CreditError } from "../credits/balance";
 import { toDuelSummary, DuelError } from "./service";
 import { DuelConflictError } from "./repo";
+import { launchMaxStakeLamports, formatSol } from "@/server/config/launch-caps";
 import {
   publishDuelAccepted,
   publishDuelExpired,
@@ -36,14 +37,13 @@ const shortCode = () => randomBytes(5).toString("hex");
 const inviteToken = () => randomBytes(24).toString("base64url");
 
 function creditEconomics(stakeLamports: bigint) {
-  const pot = stakeLamports * 2n;
-  const fee = (pot * BigInt(CREDIT_FEE_BPS)) / 10_000n;
+  const e = duelEconomics(stakeLamports, CREDIT_FEE_BPS);
   return {
-    stakeLamports: stakeLamports.toString(),
+    stakeLamports: e.stake.toString(),
     platformFeeBps: CREDIT_FEE_BPS,
-    potLamports: pot.toString(),
-    feeLamports: fee.toString(),
-    rewardLamports: (pot - fee).toString(), // winner receives the pot minus rake
+    potLamports: e.pot.toString(),
+    feeLamports: e.rake.toString(),
+    rewardLamports: e.reward.toString(), // winner receives the pot minus rake
   };
 }
 
@@ -58,6 +58,18 @@ const insufficient = () =>
  * on-chain deposit step). Throws 402 if the balance can't cover the stake.
  */
 export async function createCreditDuel(user: User, input: CreateDuelInput) {
+  // Launch cap: bounds the value at risk in any single duel while the
+  // platform is young (see server/config/launch-caps.ts). The shared schema's
+  // 1000 SOL ceiling still applies as the absolute input bound.
+  const stakeCap = launchMaxStakeLamports();
+  if (stakeCap !== null && input.stakeLamports > stakeCap) {
+    throw new DuelError(
+      "STAKE_ABOVE_LAUNCH_CAP",
+      `Stakes are currently capped at ${formatSol(stakeCap)} SOL per duel`,
+      400,
+    );
+  }
+
   const rule = await prisma.duelRule.findFirst({
     where: { template: input.ruleTemplate, enabled: true },
     select: { id: true },
@@ -279,12 +291,9 @@ export async function settleCreditDuel(duelId: string, winnerId: string): Promis
     throw new DuelError("BAD_WINNER", "Winner must be a participant", 400);
 
   const loserId = winnerId === duel.creatorId ? duel.opponentId : duel.creatorId;
-  const stake = duel.stakeLamports;
-  const pot = stake * 2n;
   // Use the fee snapshotted at creation so the payout always matches the terms
   // shown when the duel was made, even if the rake config changed since.
-  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
-  const reward = pot - rake; // what the winner actually receives
+  const { stake, rake, reward } = duelEconomics(duel.stakeLamports, duel.platformFeeBps);
 
   await prisma.$transaction(async (tx) => {
     // Move the duel to COMPLETED first (guards against double-settlement).
@@ -416,11 +425,7 @@ export async function overturnCreditSettlement(duelId: string, newWinnerId: stri
   if (duel.winnerId === newWinnerId) return duel; // upheld / already overturned — idempotent
 
   const originalWinnerId = duel.winnerId;
-  const stake = duel.stakeLamports;
-  const pot = stake * 2n;
-  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
-  const reward = pot - rake;
-  const netWinnings = reward - stake; // lifetime-won delta applied at settlement
+  const { reward, netWinnings } = duelEconomics(duel.stakeLamports, duel.platformFeeBps); // netWinnings = lifetime-won delta applied at settlement
 
   await prisma.$transaction(async (tx) => {
     // Claim: repoint the winner only if the settlement we read still stands.
@@ -487,11 +492,7 @@ export async function refundSettledCreditDuel(duelId: string): Promise<Duel> {
 
   const winnerId = duel.winnerId;
   const loserId = winnerId === duel.creatorId ? duel.opponentId : duel.creatorId;
-  const stake = duel.stakeLamports;
-  const pot = stake * 2n;
-  const rake = (pot * BigInt(duel.platformFeeBps)) / 10_000n;
-  const reward = pot - rake;
-  const netWinnings = reward - stake;
+  const { stake, netWinnings } = duelEconomics(duel.stakeLamports, duel.platformFeeBps);
 
   await prisma.$transaction(async (tx) => {
     const moved = await tx.duel.updateMany({

@@ -8,6 +8,7 @@ import {
 import { assertWithdrawalTransition } from "@solrival/shared";
 import { PublicKey } from "@solana/web3.js";
 import { applyEntry, CreditError } from "../credits/balance";
+import { launchMaxWithdrawalPerDayLamports, formatSol } from "@/server/config/launch-caps";
 import { sendFromTreasury } from "../../solana/treasury";
 
 /** Platform fee on withdrawals, in basis points (NEXT_PUBLIC_WITHDRAWAL_FEE_BPS).
@@ -109,6 +110,32 @@ export async function requestWithdrawal(
 
   const reason = await activeDisputeReason(user.id);
   const status: WithdrawalStatus = reason ? "PENDING_REVIEW" : "APPROVED";
+
+  // Launch cap: bound the value any single account can drain from the hot
+  // treasury in a day (see server/config/launch-caps.ts). Counts everything
+  // requested in the last 24h that wasn't rejected/failed-and-reverted —
+  // pending and completed alike, since all of them lock real funds.
+  const dailyCap = launchMaxWithdrawalPerDayLamports();
+  if (dailyCap !== null) {
+    const since = new Date(Date.now() - 24 * 3_600_000);
+    const recent = await prisma.withdrawalRequest.aggregate({
+      where: {
+        userId: user.id,
+        createdAt: { gte: since },
+        status: { notIn: ["REJECTED", "FAILED"] },
+      },
+      _sum: { amountLamports: true },
+    });
+    const used = recent._sum.amountLamports ?? 0n;
+    if (used + amountLamports > dailyCap) {
+      const remaining = used >= dailyCap ? 0n : dailyCap - used;
+      throw new WithdrawalError(
+        "WITHDRAWAL_DAILY_CAP",
+        `Withdrawals are currently capped at ${formatSol(dailyCap)} SOL per 24 hours — ${formatSol(remaining)} SOL remaining today`,
+        429,
+      );
+    }
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
