@@ -35,6 +35,17 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@solrival/shared", "@solrival/sdk", "@solrival/db"],
+  // Sentry's tracing instrumentation uses dynamic require() internally, which
+  // webpack reports as a "Critical dependency" warning on every compile. It's
+  // harmless and not actionable — silence it so real warnings stay visible.
+  webpack: (config) => {
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings ?? []),
+      { module: /require-in-the-middle/ },
+      { module: /@opentelemetry\/instrumentation/ },
+    ];
+    return config;
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
