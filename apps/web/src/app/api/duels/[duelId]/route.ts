@@ -23,14 +23,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
       duel = (await getDuelDetail(duelId)) ?? duel;
     }
 
+    const user = await getCurrentUser();
+    const isParticipant = !!user && (user.id === duel.creatorId || user.id === duel.opponentId);
+
     // Private duels are only visible to participants or via the invite token.
     if (duel.visibility === "PRIVATE") {
-      const user = await getCurrentUser();
       const token = new URL(req.url).searchParams.get("token");
-      const isParticipant = user && (user.id === duel.creatorId || user.id === duel.opponentId);
       const hasToken = duel.inviteToken && token === duel.inviteToken;
       if (!isParticipant && !hasToken) return fail("DUEL_NOT_FOUND", "Duel not found", 404);
     }
+
+    // The OTHER player's in-game friend invite link — how the requester adds
+    // their opponent in-game to actually play. Participants only; never leaked
+    // to spectators.
+    const opponentInviteLink = !isParticipant
+      ? null
+      : user!.id === duel.creatorId
+        ? duel.opponentFriendLink
+        : duel.creatorFriendLink;
 
     return ok({
       duel: {
@@ -48,6 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ duel
         winnerId: duel.winnerId,
         winnerPayoutLamports: duel.winnerPayoutLamports?.toString() ?? null,
         settledAt: duel.settledAt?.toISOString() ?? null,
+        opponentInviteLink,
         // One dispute per duel; null until someone (or the system) raises one.
         dispute: duel.dispute
           ? { status: duel.dispute.status, createdAt: duel.dispute.createdAt.toISOString() }

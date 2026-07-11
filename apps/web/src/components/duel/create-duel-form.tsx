@@ -1,5 +1,6 @@
 "use client";
 
+import { useGameAccount, GameAccountGate } from "@/components/game-account/game-account-gate";
 import * as React from "react";
 import { useAuthGate } from "@/hooks/use-auth-gate";
 import { Globe, Loader2, Lock, Wallet } from "lucide-react";
@@ -8,7 +9,6 @@ import {
   MIN_STAKE_LAMPORTS,
   MAX_STAKE_LAMPORTS,
   RULES_BY_GAME,
-  isValidFriendLink,
   type DuelVisibility,
   type Game,
   type RuleTemplate,
@@ -19,7 +19,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Field, TextInput, FieldError } from "@/components/ui/field";
 import { SolAmount } from "@/components/marketplace/sol-amount";
 import { GAME_META } from "@/components/marketplace/game-meta";
-import { RULE_META, FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
+import { RULE_META, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
 import { CreateDuelSuccess } from "@/components/duel/create-duel-success";
 import { useCreateDuel, type CreateStatus } from "@/hooks/use-create-duel";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ const LAMPORTS_PER_SOL = 1_000_000_000;
 const DUEL_RAKE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "1000");
 
 
-type Errors = Partial<Record<"stake" | "friendLink", string>>;
+type Errors = Partial<Record<"stake", string>>;
 
 const BUSY: Record<CreateStatus, string | null> = {
   idle: null,
@@ -53,10 +53,13 @@ export function CreateDuelForm() {
   const flow = useCreateDuel();
 
   const [game, setGame] = React.useState<Game>("CLASH_ROYALE");
+  // Duels require a linked game account for the selected game (tag = automatic
+  // verification; invite link = how the opponent adds you in-game). Only
+  // queried once signed in; the gate CTA handles the signed-out case.
+  const gameAccount = useGameAccount(game, gate.authenticated);
   const [ruleTemplate, setRuleTemplate] = React.useState<RuleTemplate>(RULES_BY_GAME.CLASH_ROYALE[0]);
   const [visibility, setVisibility] = React.useState<DuelVisibility>("PUBLIC");
   const [stake, setStake] = React.useState("");
-  const [friendLink, setFriendLink] = React.useState("");
   const [errors, setErrors] = React.useState<Errors>({});
 
   const busyLabel = BUSY[flow.status];
@@ -76,7 +79,6 @@ export function CreateDuelForm() {
     const g = next as Game;
     setGame(g);
     setRuleTemplate(RULES_BY_GAME[g][0]); // keep rule valid for the game
-    setErrors((e) => ({ ...e, friendLink: undefined })); // host changes; revalidate on submit
   }
 
   function validate(): Errors {
@@ -89,17 +91,13 @@ export function CreateDuelForm() {
     } else if (lamports > MAX_STAKE_LAMPORTS) {
       next.stake = `Maximum stake is ${Number(MAX_STAKE_LAMPORTS) / LAMPORTS_PER_SOL} SOL.`;
     }
-    if (!friendLink.trim()) {
-      next.friendLink = "Paste your in-game friend link.";
-    } else if (!isValidFriendLink(game, friendLink.trim())) {
-      next.friendLink = `That doesn't look like a ${GAME_META[game].label} link (${FRIEND_LINK_HINT[game]}).`;
-    }
     return next;
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isBusy || gate.busy) return;
+    if (gate.authenticated && !gameAccount.linked) return; // gate notice explains why
 
     // Validate before gating so field errors show immediately — and so the
     // deferred submit can never fire with an invalid form after sign-in.
@@ -114,7 +112,6 @@ export function CreateDuelForm() {
         ruleTemplate,
         visibility,
         stakeLamports: lamports.toString(),
-        friendLink: friendLink.trim(),
       }),
     );
   }
@@ -122,7 +119,6 @@ export function CreateDuelForm() {
   function createAnother() {
     flow.reset();
     setStake("");
-    setFriendLink("");
     setErrors({});
   }
 
@@ -251,25 +247,12 @@ export function CreateDuelForm() {
             </p>
           </Field>
 
-          {/* Friend link */}
-          <Field label="Friend link" hint={FRIEND_LINK_HINT[game]}>
-            <TextInput
-              type="url"
-              inputMode="url"
-              placeholder={`https://${FRIEND_LINK_HINT[game]}/...`}
-              value={friendLink}
-              onChange={(e) => {
-                setFriendLink(e.target.value);
-                if (errors.friendLink) setErrors((x) => ({ ...x, friendLink: undefined }));
-              }}
-              aria-invalid={!!errors.friendLink}
-            />
-            {errors.friendLink ? (
-              <FieldError>{errors.friendLink}</FieldError>
-            ) : (
-              <p className="text-xs text-faint">{FRIEND_LINK_HELP[game]}</p>
-            )}
-          </Field>
+          {/* Linked game account gate — tag + invite link come from Settings */}
+          {gameAccount.loading ? (
+            <div className="h-16 w-full animate-pulse rounded-lg bg-surface-2" />
+          ) : !gameAccount.linked ? (
+            <GameAccountGate game={game} />
+          ) : null}
 
           {/* Summary */}
           <div className="rounded-lg border border-border bg-surface-2/60 p-4">
@@ -307,7 +290,12 @@ export function CreateDuelForm() {
               {busyLabel}
             </div>
           ) : (
-            <Button type="submit" size="lg" className="w-full" disabled={gate.busy}>
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={gate.busy || (gate.authenticated && (gameAccount.loading || !gameAccount.linked))}
+            >
               {gate.busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : !gate.connected ? (

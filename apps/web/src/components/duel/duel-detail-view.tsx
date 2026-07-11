@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Flag, ShieldCheck, Swords } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Copy, Flag, Gamepad2, ShieldCheck, Swords } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,6 +114,14 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
     duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING";
   const canDispute = isParticipant && !duel.dispute && (isLiveDisputable || inDisputeWindow);
 
+  // Matched and in-flight: show the opponent's in-game invite link so the two
+  // players can actually find each other and play (participants only; the API
+  // returns null for spectators).
+  const showPlayCard =
+    isParticipant &&
+    duel.opponentInviteLink !== null &&
+    (duel.status === "ACCEPTED" || duel.status === "ACTIVE" || duel.status === "VERIFYING");
+
   // A settled duel with an unresolved dispute: the result stands for now, but
   // both players should see it's under review (and that payouts are frozen).
   const resultUnderReview =
@@ -209,6 +217,9 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
                   : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
             </p>
           ) : null}
+
+          {/* play the match — opponent's in-game invite link */}
+          {showPlayCard ? <PlayMatchCard inviteLink={duel.opponentInviteLink!} /> : null}
 
           {/* result under review — a settled duel with an open dispute */}
           {resultUnderReview ? (
@@ -357,5 +368,48 @@ function StateCard({
         {action}
       </CardContent>
     </Card>
+  );
+}
+
+
+/**
+ * Shown to participants of a matched duel: the opponent's friend invite link
+ * (from their linked game account) plus the play instructions. This is how two
+ * strangers matched on the marketplace find each other in-game.
+ */
+function PlayMatchCard({ inviteLink }: { inviteLink: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2_000);
+    } catch {
+      // Clipboard unavailable (permissions) — the link is still selectable.
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-2/60 p-4">
+      <div className="flex items-center gap-2">
+        <Gamepad2 className="h-4 w-4 text-rival" aria-hidden />
+        <h3 className="text-body-sm font-medium text-fg">Play the match</h3>
+      </div>
+      <p className="mt-1.5 text-body-sm text-muted">
+        Open your opponent&apos;s invite link on the device you play on, add them as a friend, then
+        play the duel&apos;s format. The result is verified automatically a few minutes after the
+        match ends — remember the 30-minute window.
+      </p>
+      <div className="mt-3 flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-caption text-muted">
+          {inviteLink}
+        </code>
+        <Button type="button" variant="secondary" size="sm" onClick={copy} className="shrink-0">
+          {copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+    </div>
   );
 }

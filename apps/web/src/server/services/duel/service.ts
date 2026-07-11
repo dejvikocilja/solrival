@@ -4,7 +4,6 @@ import { PublicKey } from "@solana/web3.js";
 import { prisma, type Duel, type User } from "@solrival/db";
 import { computeSettlement, EscrowStatus } from "@solrival/sdk";
 import {
-  isValidFriendLink,
   type CreateDuelInput,
   type Game,
 } from "@solrival/shared";
@@ -19,6 +18,7 @@ import {
 } from "./repo";
 import { buildUnsignedTx, confirmTxSucceeded, escrowIsClosed, fetchEscrow } from "./onchain";
 import { escrowClient, platformFeeBps } from "../../solana/config";
+import { requireLinkedGameAccount } from "@/server/services/game-account/service";
 import { expireCreditDuel } from "./credit-duel";
 
 
@@ -89,10 +89,7 @@ export async function createDuel(user: User, input: CreateDuelInput) {
 
   // Link the creator's game account for this game so the marketplace can show
   // and filter by their trophies / level / win rate.
-  const creatorGameAccount = await prisma.gameAccount.findUnique({
-    where: { userId_game: { userId: user.id, game: input.game } },
-    select: { id: true },
-  });
+  const creatorGameAccount = await requireLinkedGameAccount(user.id, input.game);
 
   const duel = await createDuelRecord({
     id,
@@ -101,8 +98,8 @@ export async function createDuel(user: User, input: CreateDuelInput) {
     game: input.game,
     visibility: input.visibility,
     creatorId: user.id,
-    creatorGameAccountId: creatorGameAccount?.id ?? null,
-    creatorFriendLink: input.friendLink,
+    creatorGameAccountId: creatorGameAccount.id,
+    creatorFriendLink: creatorGameAccount.friendLink,
     ruleId: rule.id,
     stakeLamports: input.stakeLamports,
     platformFeeBps,
@@ -149,12 +146,11 @@ export async function confirmDeposit(user: User, duel: Duel, signature: string) 
 }
 
 // -------------------------------------------------------- request accept -----
-export async function requestAccept(user: User, duel: Duel, friendLink: string) {
+export async function requestAccept(user: User, duel: Duel) {
   if (duel.creatorId === user.id) throw new DuelError("SELF_ACCEPT", "You cannot accept your own duel", 400);
   if (duel.status !== "WAITING_FOR_OPPONENT") throw badStatus("Duel is not open for acceptance");
   if (duel.expiresAt.getTime() <= Date.now()) throw new DuelError("EXPIRED", "Duel has expired", 410);
-  if (!isValidFriendLink(duel.game as Game, friendLink))
-    throw new DuelError("BAD_FRIEND_LINK", "Friend link does not match the duel's game", 400);
+  await requireLinkedGameAccount(user.id, duel.game); // fail fast, before any signing
 
   const opponent = new PublicKey(user.walletAddress);
   const ix = escrowClient.acceptDuel({ opponent, duelId: duel.id });
@@ -163,12 +159,11 @@ export async function requestAccept(user: User, duel: Duel, friendLink: string) 
 }
 
 // -------------------------------------------------------- confirm accept -----
-export async function confirmAccept(user: User, duel: Duel, friendLink: string, signature: string) {
+export async function confirmAccept(user: User, duel: Duel, signature: string) {
   if (duel.creatorId === user.id) throw new DuelError("SELF_ACCEPT", "You cannot accept your own duel", 400);
   if (duel.opponentId === user.id && duel.status !== "WAITING_FOR_OPPONENT") return toDuelSummary(duel); // idempotent
   if (duel.status !== "WAITING_FOR_OPPONENT") throw badStatus("Duel is not open for acceptance");
-  if (!isValidFriendLink(duel.game as Game, friendLink))
-    throw new DuelError("BAD_FRIEND_LINK", "Friend link does not match the duel's game", 400);
+  const opponentGameAccount = await requireLinkedGameAccount(user.id, duel.game);
 
   const escrow = await fetchEscrow(new PublicKey(duel.escrowPda!));
   const ok =
@@ -188,7 +183,7 @@ export async function confirmAccept(user: User, duel: Duel, friendLink: string, 
   });
   await markEscrowTxConfirmed(`${duel.id}:deposit_opponent`, signature);
 
-  const updated = await claimOpponent(duel.id, user.id, friendLink);
+  const updated = await claimOpponent(duel.id, user.id, opponentGameAccount.friendLink, opponentGameAccount.id);
   return toDuelSummary(updated);
 }
 
@@ -240,14 +235,12 @@ export async function confirmDuel(
   duel: Duel,
   phase: "deposit" | "accept" | "cancel",
   signature: string,
-  friendLink?: string,
 ) {
   switch (phase) {
     case "deposit":
       return confirmDeposit(user, duel, signature);
     case "accept":
-      if (!friendLink) throw new DuelError("MISSING_FRIEND_LINK", "friendLink is required to confirm acceptance", 400);
-      return confirmAccept(user, duel, friendLink, signature);
+      return confirmAccept(user, duel, signature);
     case "cancel":
       return confirmCancel(user, duel, signature);
   }

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ due
   return handle(async () => {
     assertSameOrigin(req);
     const user = await requireUser();
-    const { friendLink } = acceptDuelSchema.parse(await req.json());
+    acceptDuelSchema.parse(await req.json().catch(() => ({}))); // body intentionally empty
     const { duelId } = await params;
     const duel = await findDuelById(duelId);
     if (!duel) throw new DuelNotFoundError();
@@ -22,10 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ due
     // no signature / confirm round-trip. Legacy on-chain duels keep the
     // request-then-confirm flow.
     if (duel.fundingMode === "CREDITS") {
-      const result = await acceptCreditDuel(user, duel, friendLink);
+      const result = await acceptCreditDuel(user, duel);
       return ok(result);
     }
-    const result = await requestAccept(user, duel, friendLink);
+    const result = await requestAccept(user, duel);
     return ok(result);
   });
 }

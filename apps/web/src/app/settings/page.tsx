@@ -7,6 +7,7 @@ import { PageContainer, PageHeader } from "@/components/ui/page-shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Field, TextInput, FieldError } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { GameAccountsCard } from "@/components/settings/game-accounts-card";
 import { useAuth } from "@/hooks/use-auth";
 import { apiPatch, ApiError } from "@/lib/api/client";
 import type { SessionUser } from "@solrival/shared";
@@ -39,6 +40,7 @@ export default function SettingsPage() {
       ) : (
         <div className="space-y-4">
           <UsernameCard user={user} onSaved={refresh} />
+          <GameAccountsCard />
           <WalletCard address={user.walletAddress} />
         </div>
       )}

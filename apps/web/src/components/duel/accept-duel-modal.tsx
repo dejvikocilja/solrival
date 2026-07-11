@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, Swords, TriangleAlert, Wallet, X } from "lucide-react";
-import { isValidFriendLink } from "@solrival/shared";
 import { Button } from "@/components/ui/button";
-import { Field, TextInput, FieldError } from "@/components/ui/field";
 import { SolAmount } from "@/components/marketplace/sol-amount";
 import { GAME_META } from "@/components/marketplace/game-meta";
-import { FRIEND_LINK_HINT, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
+import { FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
 import { useBalance } from "@/hooks/useCredits";
+import { useGameAccount, GameAccountGate } from "@/components/game-account/game-account-gate";
 import { useAuthGate } from "@/hooks/use-auth-gate";
 import { acceptDuel } from "@/lib/api/duels";
 import { ApiError } from "@/lib/api/client";
@@ -88,11 +87,12 @@ export function AcceptDuelModal({
   const dialogRef = React.useRef<HTMLDivElement>(null);
 
   const gate = useAuthGate();
+  // Accepting requires YOUR linked account for this duel's game — your tag
+  // makes the match verifiable and your invite link is shown to the creator.
+  const gameAccount = useGameAccount(duel.game, gate.authenticated);
   const { data: balanceData } = useBalance();
   const queryClient = useQueryClient();
 
-  const [friendLink, setFriendLink] = React.useState("");
-  const [linkError, setLinkError] = React.useState<string | null>(null);
 
   const stake = BigInt(duel.stakeLamports);
   const pot = stake * 2n;
@@ -106,7 +106,7 @@ export function AcceptDuelModal({
   useFocusTrap(dialogRef, true);
 
   const accept = useMutation({
-    mutationFn: () => acceptDuel(duel.id, friendLink.trim()),
+    mutationFn: () => acceptDuel(duel.id),
     onSuccess: () => {
       toast.success("Challenge accepted — the duel is live. Add your rival in-game and play.");
       void queryClient.invalidateQueries({ queryKey: ["duel", duel.id] });
@@ -129,18 +129,7 @@ export function AcceptDuelModal({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (accept.isPending || gate.busy) return;
-
-    // Link validation is auth-independent — surface it before gating so the
-    // deferred accept can never fire with a bad link after sign-in.
-    const trimmed = friendLink.trim();
-    if (!trimmed) {
-      setLinkError("Paste your in-game friend link.");
-      return;
-    }
-    if (!isValidFriendLink(duel.game, trimmed)) {
-      setLinkError(`That doesn't look like a ${game.label} link (${FRIEND_LINK_HINT[duel.game]}).`);
-      return;
-    }
+    if (gate.authenticated && !gameAccount.linked) return; // gate notice explains why
     if (insufficient) return; // authed path; the server re-checks authoritatively
     gate.run(() => accept.mutate());
   }
@@ -230,27 +219,11 @@ export function AcceptDuelModal({
             ) : null}
 
             {isAuthed && !insufficient ? (
-              <Field label="Friend link" hint={FRIEND_LINK_HINT[duel.game]}>
-                <TextInput
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={accept.isPending}
-                  value={friendLink}
-                  onChange={(e) => {
-                    setFriendLink(e.target.value);
-                    if (linkError) setLinkError(null);
-                  }}
-                  aria-invalid={!!linkError}
-                  placeholder={`https://${FRIEND_LINK_HINT[duel.game]}/...`}
-                />
-                {linkError ? (
-                  <FieldError>{linkError}</FieldError>
-                ) : (
-                  <p className="text-xs text-faint">{FRIEND_LINK_HELP[duel.game]}</p>
-                )}
-              </Field>
+              gameAccount.loading ? (
+                <div className="h-16 w-full animate-pulse rounded-lg bg-surface-2" />
+              ) : !gameAccount.linked ? (
+                <GameAccountGate game={duel.game} />
+              ) : null
             ) : (
               <p className="text-sm text-muted">
                 {!gate.connected
@@ -264,7 +237,14 @@ export function AcceptDuelModal({
             <Button type="button" variant="secondary" className="flex-1" disabled={accept.isPending} onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1" disabled={accept.isPending || insufficient || gate.busy}>
+            <Button
+              type="submit"
+              className="flex-1"
+              disabled={
+                accept.isPending || insufficient || gate.busy ||
+                (gate.authenticated && (gameAccount.loading || !gameAccount.linked))
+              }
+            >
               {accept.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />

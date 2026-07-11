@@ -95,12 +95,14 @@ export async function claimOpponent(
   id: string,
   opponentId: string,
   opponentFriendLink: string,
+  opponentGameAccountId: string,
 ): Promise<Duel> {
   const res = await prisma.duel.updateMany({
     where: { id, status: "WAITING_FOR_OPPONENT", opponentId: null },
     data: {
       status: "ACCEPTED",
       opponentId,
+      opponentGameAccountId,
       opponentFriendLink,
       acceptedAt: new Date(),
     },

@@ -1,11 +1,12 @@
 import "server-only";
 import { randomBytes, randomUUID } from "node:crypto";
 import { prisma, type Duel, type User } from "@solrival/db";
-import { duelEconomics, isValidFriendLink, type CreateDuelInput, type Game } from "@solrival/shared";
+import { duelEconomics, type CreateDuelInput } from "@solrival/shared";
 import { applyEntry, lockBalances, CreditError } from "../credits/balance";
 import { toDuelSummary, DuelError } from "./service";
 import { DuelConflictError } from "./repo";
 import { launchMaxStakeLamports, formatSol } from "@/server/config/launch-caps";
+import { requireLinkedGameAccount } from "@/server/services/game-account/service";
 import {
   publishDuelAccepted,
   publishDuelExpired,
@@ -76,10 +77,9 @@ export async function createCreditDuel(user: User, input: CreateDuelInput) {
   });
   if (!rule) throw new DuelError("RULE_UNAVAILABLE", "Rule template is not available", 400);
 
-  const creatorGameAccount = await prisma.gameAccount.findUnique({
-    where: { userId_game: { userId: user.id, game: input.game } },
-    select: { id: true },
-  });
+  // Every duel must be verifiable and every matched player reachable in-game:
+  // require a linked game account (tag + invite link) and snapshot from it.
+  const creatorGameAccount = await requireLinkedGameAccount(user.id, input.game);
 
   const id = randomUUID();
   try {
@@ -94,8 +94,8 @@ export async function createCreditDuel(user: User, input: CreateDuelInput) {
           status: "WAITING_FOR_OPPONENT",
           fundingMode: "CREDITS",
           creatorId: user.id,
-          creatorGameAccountId: creatorGameAccount?.id ?? null,
-          creatorFriendLink: input.friendLink,
+          creatorGameAccountId: creatorGameAccount.id,
+          creatorFriendLink: creatorGameAccount.friendLink,
           ruleId: rule.id,
           stakeLamports: input.stakeLamports,
           platformFeeBps: CREDIT_FEE_BPS,
@@ -132,12 +132,14 @@ export async function createCreditDuel(user: User, input: CreateDuelInput) {
  * Accepts an open credit duel: locks the opponent's stake and claims the slot.
  * No signature needed — funds move from the opponent's balance directly.
  */
-export async function acceptCreditDuel(user: User, duel: Duel, friendLink: string) {
+export async function acceptCreditDuel(user: User, duel: Duel) {
   if (duel.creatorId === user.id) throw new DuelError("SELF_ACCEPT", "You cannot accept your own duel", 400);
   if (duel.status !== "WAITING_FOR_OPPONENT") throw new DuelError("INVALID_STATUS", "Duel is not open for acceptance", 409);
   if (duel.expiresAt.getTime() <= Date.now()) throw new DuelError("EXPIRED", "Duel has expired", 410);
-  if (!isValidFriendLink(duel.game as Game, friendLink))
-    throw new DuelError("BAD_FRIEND_LINK", "Friend link does not match the duel's game", 400);
+
+  // Same requirement as creation — the acceptor's tag makes the duel
+  // verifiable, and their invite link is shown to the creator.
+  const opponentGameAccount = await requireLinkedGameAccount(user.id, duel.game);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -160,7 +162,8 @@ export async function acceptCreditDuel(user: User, duel: Duel, friendLink: strin
           // to ACTIVE so the verification window (from acceptedAt) starts now.
           status: "ACTIVE",
           opponentId: user.id,
-          opponentFriendLink: friendLink,
+          opponentGameAccountId: opponentGameAccount.id,
+          opponentFriendLink: opponentGameAccount.friendLink,
           acceptedAt: now,
           activatedAt: now,
         },

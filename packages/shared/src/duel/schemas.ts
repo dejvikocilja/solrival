@@ -43,8 +43,6 @@ export function isValidFriendLink(game: Game, link: string): boolean {
   }
 }
 
-export const friendLinkSchema = z.string().url().max(500);
-
 /** Lamports as a decimal string (JSON has no BigInt); bounded to a sane range. */
 export const stakeLamportsSchema = z
   .string()
@@ -60,20 +58,18 @@ export const createDuelSchema = z
     ruleTemplate: ruleTemplateSchema,
     visibility: duelVisibilitySchema,
     stakeLamports: stakeLamportsSchema,
-    friendLink: friendLinkSchema,
   })
   .superRefine((val, ctx) => {
     if (!RULES_BY_GAME[val.game].includes(val.ruleTemplate)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ruleTemplate"], message: "Rule template does not match game" });
     }
-    if (!isValidFriendLink(val.game, val.friendLink)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["friendLink"], message: "Friend link does not match the selected game" });
-    }
   });
 export type CreateDuelInput = z.infer<typeof createDuelSchema>;
 
 // ---- POST /api/duels/:id/accept --------------------------------------------
-export const acceptDuelSchema = z.object({ friendLink: friendLinkSchema });
+// Accept carries no body fields: the opponent's friend link is snapshotted
+// server-side from their linked GameAccount (Settings -> Game accounts).
+export const acceptDuelSchema = z.object({});
 export type AcceptDuelInput = z.infer<typeof acceptDuelSchema>;
 
 // ---- POST /api/duels/:id/confirm -------------------------------------------

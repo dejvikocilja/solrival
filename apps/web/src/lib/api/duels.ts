@@ -58,6 +58,8 @@ export interface DuelDetail {
   winnerPayoutLamports: string | null;
   /** When the duel settled (ISO); null until COMPLETED/REFUNDED. */
   settledAt: string | null;
+  /** The OTHER participant's in-game friend invite link (participants only). */
+  opponentInviteLink: string | null;
   /** The duel's dispute, if one exists (one per duel; system- or player-raised). */
   dispute: { status: string; createdAt: string } | null;
   /** Server policy: hours after settlement a result stays contestable. */
@@ -86,7 +88,6 @@ export type CreateDuelBody = {
   ruleTemplate: RuleTemplate;
   visibility: DuelVisibility;
   stakeLamports: string;
-  friendLink: string;
 };
 
 /**
@@ -108,8 +109,8 @@ export function getDuel(id: string, inviteToken?: string | null): Promise<{ duel
 }
 
 /** Accepts an open duel — locks the opponent's stake from their balance. */
-export function acceptDuel(id: string, friendLink: string): Promise<unknown> {
-  return apiPost<unknown>(`/api/duels/${id}/accept`, { friendLink });
+export function acceptDuel(id: string): Promise<unknown> {
+  return apiPost<unknown>(`/api/duels/${id}/accept`, {});
 }
 
 /** Raises a dispute on a live/verifying duel — freezes settlement for admin review. */
