@@ -57,23 +57,29 @@ export function SiteFooter() {
 
   return (
     <footer className="mt-16 border-t border-border">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          {/* Legal — the only nav the header doesn't already carry */}
-          <nav aria-label="Legal">
-            <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
-              {LEGAL_LINKS.map((l) => (
-                <li key={l.href}>
-                  <Link
-                    href={l.href}
-                    className="rounded-sm text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
-                  >
-                    {l.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          {/* Legal — the only nav the header doesn't already carry, with the
+              copyright sitting directly beneath it. */}
+          <div className="space-y-2">
+            <nav aria-label="Legal">
+              <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                {LEGAL_LINKS.map((l) => (
+                  <li key={l.href}>
+                    <Link
+                      href={l.href}
+                      className="rounded-sm text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
+                    >
+                      {l.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <p className="text-caption text-faint">
+              © {new Date().getFullYear()} SolRival. All rights reserved.
+            </p>
+          </div>
 
           {/* Socials */}
           <div className="flex items-center gap-1">
@@ -93,17 +99,6 @@ export function SiteFooter() {
               );
             })}
           </div>
-        </div>
-
-        {/* Bottom row */}
-        <div className="mt-8 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-caption text-faint">
-            © {new Date().getFullYear()} SolRival. All rights reserved.
-          </p>
-          <p className="text-caption text-faint">
-            Built on <span className="text-muted">Solana</span> · Not affiliated with or endorsed by
-            Supercell
-          </p>
         </div>
       </div>
     </footer>
