@@ -13,6 +13,7 @@
  */
 
 import { prisma } from '@solrival/db'
+import { normalizeGameMode } from './types'
 import type { DuelVerificationContext, BattleRecord, GameId } from './types'
 import { fetchClashRoyaleBattles } from './clash-royale'
 import { fetchBrawlStarsBattles } from './brawl-stars'
@@ -72,10 +73,11 @@ function battlesAreSameTime(battleA: BattleRecord, battleB: BattleRecord): boole
 /**
  * Returns `true` if the battle mode matches the expected game mode.
  *
- * Comparison is case-insensitive and ignores surrounding whitespace.
+ * Both sides pass through normalizeGameMode so representation differences
+ * ("gemGrab" vs "gem-grab" vs "Gem Grab") can never cause a false mismatch.
  */
 function modeMatches(battle: BattleRecord, expectedMode: string): boolean {
-  return battle.mode.trim().toLowerCase() === expectedMode.trim().toLowerCase()
+  return normalizeGameMode(battle.mode) === normalizeGameMode(expectedMode)
 }
 
 /**

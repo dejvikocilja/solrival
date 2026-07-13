@@ -397,9 +397,11 @@ function PlayMatchCard({ inviteLink }: { inviteLink: string }) {
         <h3 className="text-body-sm font-medium text-fg">Play the match</h3>
       </div>
       <p className="mt-1.5 text-body-sm text-muted">
-        Open your opponent&apos;s invite link on the device you play on, add them as a friend, then
-        play the duel&apos;s format. The result is verified automatically a few minutes after the
-        match ends — remember the 30-minute window.
+        Open your opponent&apos;s invite link on the device you play on and add them as a friend.
+        Then create a friendly room, pick the duel&apos;s format, and make sure you join{" "}
+        <span className="font-medium text-fg">opposite sides</span> — playing on the same team (or
+        against bots) can&apos;t produce a winner. The result verifies automatically a few minutes
+        after the match ends; remember the 30-minute window.
       </p>
       <div className="mt-3 flex items-center gap-2">
         <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-surface px-3 py-2 font-mono text-caption text-muted">

@@ -103,3 +103,21 @@ export interface VerificationResult {
    */
   failureReason: string | null
 }
+
+// ─── Mode normalization ───────────────────────────────────────────────────────
+
+/**
+ * Canonicalizes a game-mode string for comparison by stripping everything
+ * except letters/digits and lowercasing: "gemGrab", "gem-grab", "Gem Grab"
+ * all become "gemgrab".
+ *
+ * This is the ONLY way modes may be compared. The duel rules store camelCase
+ * ("gemGrab"), while parsers historically emitted kebab-case ("gem-grab") —
+ * a raw comparison silently never matched, leaving verifiable duels stuck.
+ * Both sides of every comparison must pass through this function.
+ */
+export function normalizeGameMode(raw: string | undefined | null): string {
+  if (!raw) return 'unknown'
+  const cleaned = raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+  return cleaned.length > 0 ? cleaned : 'unknown'
+}
