@@ -8,7 +8,9 @@ import { DuelCard } from "@/components/arena/duel-card";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "SolRival — Competitive 1v1 duels for real stakes",
+  // `title.absolute` opts out of the root layout's "SolRival | %s" template,
+  // which would otherwise render "SolRival | SolRival | …" here.
+  title: { absolute: "SolRival | Skill-based Solana duels" },
   description:
     "Challenge players to skill-based 1v1 duels in Clash Royale and Brawl Stars. Both rivals stake the same, the pot is held in Solana escrow, and the winner is paid automatically.",
 };
