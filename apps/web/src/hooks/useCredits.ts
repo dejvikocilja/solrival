@@ -50,7 +50,7 @@ export type WithdrawalView = {
 };
 
 const TREASURY = process.env.NEXT_PUBLIC_TREASURY_WALLET ?? "";
-export const DEPOSIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "200");
+export const DEPOSIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "50");
 // Upper bound for a single-transfer fee (5000 lamports/signature) + headroom.
 const FEE_BUFFER_LAMPORTS = 10_000n;
 

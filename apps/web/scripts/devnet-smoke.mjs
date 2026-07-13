@@ -32,7 +32,7 @@
  *   SMOKE_FUNDER_SECRET     optional pre-funded devnet key; skips flaky airdrops
  *   VERIFY_CRON_SECRET / EXPIRE_CRON_SECRET / WITHDRAWAL_CRON_SECRET
  *                           needed for steps 6–7 (same values as the server's)
- *   SMOKE_STAKE_SOL         stake per player (default 0.005)
+ *   SMOKE_STAKE_SOL         stake per player (default 0.5 — the platform minimum)
  */
 
 import {
@@ -83,9 +83,9 @@ if (CLUSTER.includes("mainnet") || RPC_URL.includes("mainnet")) {
   process.exit(1);
 }
 
-const STAKE_SOL = Number(process.env.SMOKE_STAKE_SOL ?? "0.005");
+const STAKE_SOL = Number(process.env.SMOKE_STAKE_SOL ?? "0.5");
 const STAKE_LAMPORTS = BigInt(Math.round(STAKE_SOL * LAMPORTS_PER_SOL));
-const DEPOSIT_SOL = 0.06; // covers stake + withdrawal minimum (0.01) + margin
+const DEPOSIT_SOL = 0.6; // covers the 0.5 SOL minimum stake + withdrawal minimum (0.01) + margin
 /** Empty-string env vars count as unset — `VAR=$UNSET_SHELL_VAR` passes "". */
 const nonEmpty = (v) => (v && v.trim().length > 0 ? v.trim() : undefined);
 const VERIFY_SECRET = nonEmpty(process.env.VERIFY_CRON_SECRET) ?? nonEmpty(process.env.EXPIRE_CRON_SECRET) ?? "";

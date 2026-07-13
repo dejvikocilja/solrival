@@ -30,7 +30,7 @@ const GAME_OPTIONS = [
 ];
 const STAKE_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
 const LAMPORTS_PER_SOL = 1_000_000_000;
-const DUEL_RAKE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "1000");
+const DUEL_RAKE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "500");
 
 
 type Errors = Partial<Record<"stake", string>>;

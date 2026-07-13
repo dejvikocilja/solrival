@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, Copy, Flag, Gamepad2, ShieldCheck, Swords } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,6 +45,10 @@ function shortWallet(addr: string): string {
 
 export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: string }) {
   const { user } = useAuth();
+  // Where the user came from. My Duels links with ?from=my-duels so the back
+  // control returns them there instead of the marketplace.
+  const searchParams = useSearchParams();
+  const cameFromMyDuels = searchParams?.get("from") === "my-duels";
   const [accepting, setAccepting] = React.useState(false);
   const [disputing, setDisputing] = React.useState(false);
 
@@ -141,13 +146,25 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
 
   return (
     <>
-      <Link
-        href="/marketplace"
-        className="mb-4 inline-flex items-center gap-1.5 text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring rounded"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        Back to marketplace
-      </Link>
+      {/* Context-aware back. From My Duels: a bare arrow returning to that list.
+          Otherwise the labelled marketplace link. `from` is set by the linking page. */}
+      {cameFromMyDuels ? (
+        <Link
+          href="/duels"
+          aria-label="Back to my duels"
+          className="mb-4 inline-flex h-9 w-9 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+        </Link>
+      ) : (
+        <Link
+          href="/marketplace"
+          className="mb-4 inline-flex items-center gap-1.5 rounded text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Back to marketplace
+        </Link>
+      )}
 
       <Card className="overflow-hidden">
         <span className={cn("block h-1 w-full", game.rail)} aria-hidden />

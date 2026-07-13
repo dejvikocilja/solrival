@@ -100,9 +100,11 @@ function MyDuelRow({ duel }: { duel: MyDuel }) {
   const status = STATUS_META[duel.status] ?? { label: duel.status, tone: "neutral" as const };
   const rival = duel.role === "creator" ? duel.opponent : duel.creator;
   const isOpen = duel.status === "WAITING_FOR_OPPONENT" || duel.status === "CREATED";
+  // `from=my-duels` tells the detail page to send "back" here rather than to
+  // the marketplace (which the player may never have visited).
   const href = duel.inviteToken
-    ? `/duels/${duel.id}?invite=${encodeURIComponent(duel.inviteToken)}`
-    : `/duels/${duel.id}`;
+    ? `/duels/${duel.id}?invite=${encodeURIComponent(duel.inviteToken)}&from=my-duels`
+    : `/duels/${duel.id}?from=my-duels`;
 
   return (
     <Link href={href} className="block rounded-xl focus-visible:focus-ring">

@@ -234,6 +234,11 @@ model User {
   walletAddress  String         @unique @map("wallet_address") // full base58; shortened only in UI
   walletProvider WalletProvider? @map("wallet_provider")
   username       String         @unique
+  /// Lowercased mirror of `username`, maintained by the app on every write.
+  /// Postgres unique indexes are case-SENSITIVE, so "Dejvi" and "dejvi" would
+  /// otherwise both be creatable — an impersonation vector. This column is the
+  /// real uniqueness guarantee; `username` preserves the user's chosen casing.
+  usernameLower  String         @unique @map("username_lower")
   role           UserRole       @default(PLAYER)
 
   // denormalized platform record (source of truth = duel results; updated in tx)
@@ -780,7 +785,13 @@ model WithdrawalRequest {
   userId             String           @map("user_id") @db.Uuid
   status             WithdrawalStatus @default(APPROVED)
 
+  // Requested gross, the fee kept by the platform, and the net actually sent
+  // on-chain. Persisted (not recomputed) so changing the fee rate can never
+  // rewrite the accounting of past withdrawals.
   amountLamports     BigInt           @map("amount_lamports")
+  feeLamports        BigInt           @default(0) @map("fee_lamports")
+  feeBps             Int              @default(0) @map("fee_bps")
+  netLamports        BigInt           @default(0) @map("net_lamports")
   destinationWallet  String           @map("destination_wallet")
 
   // approval trail

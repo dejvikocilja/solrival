@@ -13,7 +13,7 @@ import { sendFromTreasury } from "../../solana/treasury";
 
 /** Platform fee on withdrawals, in basis points (NEXT_PUBLIC_WITHDRAWAL_FEE_BPS).
  *  The user receives the amount minus this fee; the fee stays in the treasury. */
-const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "200"); // 2%
+const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "50"); // 0.5%
 
 /**
  * Withdrawal lifecycle + fraud control.
@@ -191,6 +191,8 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
 
   // Withdrawal fee: user receives the requested amount minus the fee. The full
   // requested amount leaves their locked balance; the fee stays in the treasury.
+  // The rate is snapshotted onto the row below, so a later fee change can never
+  // retroactively rewrite what this withdrawal actually cost.
   const feeLamports = (w.amountLamports * BigInt(WITHDRAWAL_FEE_BPS)) / 10_000n;
   const netLamports = w.amountLamports - feeLamports;
 
@@ -209,7 +211,15 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
       });
       await tx.withdrawalRequest.update({
         where: { id: w.id },
-        data: { status: "COMPLETED", txSignature: signature, completedAt: new Date(), error: null },
+        data: {
+          status: "COMPLETED",
+          txSignature: signature,
+          completedAt: new Date(),
+          error: null,
+          feeLamports,
+          feeBps: WITHDRAWAL_FEE_BPS,
+          netLamports,
+        },
       });
     });
 

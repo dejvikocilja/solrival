@@ -32,7 +32,7 @@ const toSol = (lamports: bigint) => Number(lamports) / LAMPORTS_PER_SOL;
 const DUEL_WINDOW_MS = 30 * 60 * 1000;
 // Platform rake on each duel pot, in basis points. Configurable via env
 // (NEXT_PUBLIC_DUEL_RAKE_BPS); snapshotted onto each duel at creation.
-const CREDIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "1000"); // 10%
+const CREDIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "500"); // 5%
 
 const shortCode = () => randomBytes(5).toString("hex");
 const inviteToken = () => randomBytes(24).toString("base64url");

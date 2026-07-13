@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { lamportsToSol } from "@/lib/utils";
@@ -70,6 +72,36 @@ export function WithdrawalList({ withdrawals }: { withdrawals: WithdrawalView[] 
   );
 }
 
+/**
+ * How many rows each card shows before "Show more". The ledger grows far faster
+ * than the withdrawal list (every stake, refund and payout is an entry), so
+ * without a cap the activity card ran many screens longer than the card beside
+ * it. Both cards now start at the same height and expand on demand.
+ */
+const COLLAPSED_ROWS = 5;
+
+function ShowMoreButton({
+  expanded,
+  hidden,
+  onClick,
+}: {
+  expanded: boolean;
+  hidden: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={expanded}
+      className="flex w-full items-center justify-center gap-1.5 border-t border-border px-4 py-2.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+    >
+      {expanded ? "Show less" : `Show ${hidden} more`}
+      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden />
+    </button>
+  );
+}
+
 export function ActivityCard({
   ledger,
   withdrawals,
@@ -77,14 +109,27 @@ export function ActivityCard({
   ledger: LedgerEntryView[];
   withdrawals: WithdrawalView[];
 }) {
+  const [ledgerOpen, setLedgerOpen] = React.useState(false);
+  const [withdrawalsOpen, setWithdrawalsOpen] = React.useState(false);
+
+  const shownLedger = ledgerOpen ? ledger : ledger.slice(0, COLLAPSED_ROWS);
+  const shownWithdrawals = withdrawalsOpen ? withdrawals : withdrawals.slice(0, COLLAPSED_ROWS);
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid items-start gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
           <h2 className="text-sm font-semibold text-fg">Recent activity</h2>
         </CardHeader>
         <CardContent className="p-0">
-          <LedgerList entries={ledger} />
+          <LedgerList entries={shownLedger} />
+          {ledger.length > COLLAPSED_ROWS ? (
+            <ShowMoreButton
+              expanded={ledgerOpen}
+              hidden={ledger.length - COLLAPSED_ROWS}
+              onClick={() => setLedgerOpen((v) => !v)}
+            />
+          ) : null}
         </CardContent>
       </Card>
       <Card>
@@ -92,7 +137,14 @@ export function ActivityCard({
           <h2 className="text-sm font-semibold text-fg">Withdrawals</h2>
         </CardHeader>
         <CardContent className="p-0">
-          <WithdrawalList withdrawals={withdrawals} />
+          <WithdrawalList withdrawals={shownWithdrawals} />
+          {withdrawals.length > COLLAPSED_ROWS ? (
+            <ShowMoreButton
+              expanded={withdrawalsOpen}
+              hidden={withdrawals.length - COLLAPSED_ROWS}
+              onClick={() => setWithdrawalsOpen((v) => !v)}
+            />
+          ) : null}
         </CardContent>
       </Card>
     </div>

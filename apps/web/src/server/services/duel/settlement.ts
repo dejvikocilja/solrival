@@ -25,26 +25,31 @@ export class SettlementError extends Error {
   }
 }
 
+/**
+ * Records the terminal state of a duel's verification job.
+ *
+ * `status` describes the JOB, `outcome` describes the RESULT — and they must
+ * agree. Previously every terminal write hardcoded SUCCEEDED, so the admin UI
+ * showed rows reading "Succeeded / VERIFICATION_FAILURE", which is a
+ * contradiction. Mapping:
+ *
+ *   VERIFIED_WINNER      → SUCCEEDED (a winner was proven from battle data)
+ *   DISPUTE              → SUCCEEDED (the job reached a terminal decision:
+ *                          route to human review — it did its job)
+ *   VERIFICATION_FAILURE → FAILED    (no result could be established; the duel
+ *                          was refunded)
+ */
 async function markVerificationJob(
   duelId: string,
   outcome: "VERIFIED_WINNER" | "VERIFICATION_FAILURE" | "DISPUTE",
   detectedWinnerId: string | null,
 ) {
+  const status = outcome === "VERIFICATION_FAILURE" ? "FAILED" : "SUCCEEDED";
+  const now = new Date();
   await prisma.verificationJob.upsert({
     where: { duelId },
-    update: {
-      status: "SUCCEEDED",
-      outcome,
-      detectedWinnerId,
-      completedAt: new Date(),
-    },
-    create: {
-      duelId,
-      status: "SUCCEEDED",
-      outcome,
-      detectedWinnerId,
-      completedAt: new Date(),
-    },
+    update: { status, outcome, detectedWinnerId, completedAt: now },
+    create: { duelId, status, outcome, detectedWinnerId, completedAt: now, startedAt: now },
   });
 }
 
@@ -97,11 +102,7 @@ export async function markDuelDisputed(duelId: string): Promise<void> {
     where: { id: duelId, status: { in: ["ACTIVE", "VERIFYING", "ACCEPTED"] } },
     data: { status: "DISPUTED" },
   });
-  await prisma.verificationJob.upsert({
-    where: { duelId },
-    update: { status: "SUCCEEDED", outcome: "DISPUTE", completedAt: new Date() },
-    create: { duelId, status: "SUCCEEDED", outcome: "DISPUTE", completedAt: new Date() },
-  });
+  await markVerificationJob(duelId, "DISPUTE", null);
 }
 
 /**

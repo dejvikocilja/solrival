@@ -39,12 +39,16 @@ export async function findOrCreateUser(
   }
 
   for (let attempt = 0; attempt < 5; attempt++) {
+    // Fresh candidate each attempt: a unique-violation retry must not re-try
+    // the same name. usernameLower is what the DB actually enforces.
+    const uname = defaultUsername(walletAddress);
     try {
       return await prisma.user.create({
         data: {
           walletAddress,
           walletProvider: provider,
-          username: defaultUsername(walletAddress),
+          username: uname,
+          usernameLower: uname.toLowerCase(),
           referralCode: generateReferralCode(),
           role: isAdmin ? "ADMIN" : "PLAYER",
           lastSeenAt: new Date(),

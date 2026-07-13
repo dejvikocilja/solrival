@@ -18,6 +18,11 @@ export async function register(): Promise<void> {
       validateEnv();
     }
     await import("../sentry.server.config");
+
+    // Dev only: run the three sweeps in-process so timeouts/refunds/payouts
+    // happen automatically, as they do in production under real cron.
+    const { startDevCron } = await import("@/server/dev-cron");
+    startDevCron();
   }
   if (process.env.NEXT_RUNTIME === "edge") {
     await import("../sentry.edge.config");

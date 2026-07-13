@@ -156,6 +156,23 @@ function buildContext(duel: DuelRow, creatorTag: string, opponentTag: string): D
   }
 }
 
+/**
+ * Marks the duel's verification job as in-flight and counts the attempt.
+ * Best-effort: telemetry must never fail a settlement path.
+ */
+async function recordVerificationAttempt(duelId: string): Promise<void> {
+  try {
+    const now = new Date()
+    await prisma.verificationJob.upsert({
+      where: { duelId },
+      update: { status: 'RUNNING', attempts: { increment: 1 }, startedAt: now },
+      create: { duelId, status: 'RUNNING', attempts: 1, startedAt: now },
+    })
+  } catch (err) {
+    console.warn({ msg: 'verify_job_attempt_record_failed', duelId, err: String(err) })
+  }
+}
+
 /** The verification deadline for a duel (acceptedAt + validity window). */
 function deadlineFor(duel: DuelRow): Date {
   return new Date(duel.acceptedAt.getTime() + TIMEOUT_MINUTES * 60 * 1_000)
@@ -224,6 +241,11 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
   const duel = await loadDuelRow(duelId)
   if (duel === null) return errorResult(duelId, 'Duel not found or not in a verifiable state')
 
+  // Record this attempt so the admin UI reflects reality (it used to sit on
+  // "Queued / 0 attempts" forever because nothing wrote to the job until a
+  // terminal outcome). Never let bookkeeping break verification.
+  await recordVerificationAttempt(duelId)
+
   // Events without a targetUserId broadcast to EVERY connected client, so all
   // verification events are published once per participant — other users must
   // never receive (or infer) another duel's progress or outcome.
@@ -239,26 +261,26 @@ export async function verifyDuelOnce(duelId: string): Promise<VerificationResult
   const pastDeadline = Date.now() >= deadline.getTime()
 
   // ── Hard deadline: resolve terminally so nothing stays in-flight forever ──
+  //
+  // No verifiable battle appeared within the window. Whatever the cause — one
+  // player never showed, they played the wrong mode, or they never linked an
+  // account — there is no result to judge, so the honest, deterministic outcome
+  // is the same in every case: return both stakes in full.
+  //
+  // This is deliberately NOT routed to admin review. A no-show costs the
+  // absent player nothing and gains the present player nothing, so there is no
+  // fraud to adjudicate; queuing every no-show for a human would make admin
+  // load scale with traffic while producing the identical refund. Admin review
+  // stays reserved for disputes a PLAYER raises (a contested result), which is
+  // the case where a human actually has something to decide.
   if (pastDeadline) {
-    if (creatorTag !== null && opponentTag !== null) {
-      // Both players linked accounts but no matching battle appeared in the
-      // window — a possible no-show. Keep funds locked and route to admin.
-      const ctx = buildContext(duel, creatorTag, opponentTag)
-      const reason = `No matching battle found within the verification window (expired ${deadline.toISOString()})`
-      await markDuelDisputed(duel.id)
-      await openDispute(ctx, reason)
-      notifyParticipants((targetUserId) =>
-        publishVerificationCompleted({ duelId, winnerTag: null, status: 'timeout', battleTime: null, targetUserId }),
-      )
-      return { duelId, status: 'timeout', winnerTag: null, battle: null, verifiedAt: new Date(), failureReason: reason }
-    }
+    const reason =
+      creatorTag !== null && opponentTag !== null
+        ? `No matching battle found within the verification window (expired ${deadline.toISOString()})`
+        : `Verification window elapsed with no linked game accounts to match against (expired ${deadline.toISOString()})`
 
-    // Structurally unverifiable (a participant never linked a game account):
-    // there is no data to judge a winner, so refund both stakes in full. This
-    // is the deterministic, self-serve outcome — no admin, no funds stranded.
-    const reason = `Verification window elapsed with no linked game accounts to match against (expired ${deadline.toISOString()})`
     await applyDuelRefund(duel.id)
-    console.warn({ msg: 'verify_duel_refunded_unverifiable', duelId, reason })
+    console.info({ msg: 'verify_duel_refunded_on_timeout', duelId, reason })
     notifyParticipants((targetUserId) =>
       publishVerificationCompleted({ duelId, winnerTag: null, status: 'refunded', battleTime: null, targetUserId }),
     )

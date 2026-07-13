@@ -9,6 +9,7 @@ import {
   Flag,
   Trophy,
   Banknote,
+  Landmark,
 } from "lucide-react"
 
 interface NavItem {
@@ -23,6 +24,7 @@ const NAV: NavItem[] = [
   { href: "/admin/verification", label: "Verification",  icon: <ShieldCheck className="h-4 w-4" /> },
   { href: "/admin/disputes",     label: "Disputes",      icon: <Flag        className="h-4 w-4" /> },
   { href: "/admin/withdrawals",  label: "Withdrawals",   icon: <Banknote    className="h-4 w-4" /> },
+  { href: "/admin/treasury",     label: "Treasury",      icon: <Landmark    className="h-4 w-4" /> },
   { href: "/admin/tournaments",  label: "Tournaments",   icon: <Trophy      className="h-4 w-4" /> },
 ]
 

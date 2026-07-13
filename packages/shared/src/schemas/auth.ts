@@ -65,11 +65,36 @@ export const verifyResponseSchema = z.object({ user: sessionUserSchema });
 export type VerifyResponse = z.infer<typeof verifyResponseSchema>;
 
 // ---- PATCH /api/users/me ----------------------------------------------------
+/**
+ * Names nobody may claim: they'd let a user impersonate the platform, staff, or
+ * a system surface. Checked case-insensitively (and the DB enforces
+ * case-insensitive uniqueness, so "Admin" can't sneak past "admin").
+ */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  "admin", "administrator", "root", "system", "support", "help", "moderator", "mod",
+  "staff", "team", "official", "solrival", "sol-rival", "solrival_team", "treasury",
+  "wallet", "security", "billing", "payments", "api", "www", "null", "undefined",
+  "anonymous", "deleted", "everyone", "here", "me", "you",
+]);
+
+/**
+ * Username rules (standard practice for a public competitive platform):
+ *  - 3–20 characters, letters/numbers/hyphen/underscore only
+ *  - must start with a letter or number (no leading -/_ used to fake sorting)
+ *  - no trailing separator, no consecutive separators ("a__b", "a--b")
+ *  - not a reserved word
+ * Uniqueness is case-insensitive and enforced by the database.
+ */
 export const usernameSchema = z
   .string()
-  .min(3)
-  .max(20)
-  .regex(/^[a-zA-Z0-9_-]+$/, "Use letters, numbers, hyphen or underscore only");
+  .trim()
+  .min(3, "Username must be at least 3 characters")
+  .max(20, "Username must be at most 20 characters")
+  .regex(/^[a-zA-Z0-9_-]+$/, "Use letters, numbers, hyphen or underscore only")
+  .regex(/^[a-zA-Z0-9]/, "Username must start with a letter or number")
+  .regex(/[a-zA-Z0-9]$/, "Username must end with a letter or number")
+  .refine((v) => !/[-_]{2,}/.test(v), "No consecutive hyphens or underscores")
+  .refine((v) => !RESERVED_USERNAMES.has(v.toLowerCase()), "That username is reserved");
 
 export const updateProfileSchema = z.object({ username: usernameSchema });
 export type UpdateProfileRequest = z.infer<typeof updateProfileSchema>;

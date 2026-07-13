@@ -16,7 +16,8 @@ export async function GET() {
   });
 }
 
-// PATCH username (case-insensitive uniqueness enforced at the DB).
+// PATCH username. Uniqueness is case-insensitive: the DB's unique index lives on
+// `username_lower`, so "Dejvi" cannot be claimed while "dejvi" exists.
 export async function PATCH(req: NextRequest) {
   return handle(async () => {
     assertSameOrigin(req);
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest) {
     try {
       const updated = await prisma.user.update({
         where: { id: user.id },
-        data: { username },
+        data: { username, usernameLower: username.toLowerCase() },
       });
       return ok<{ user: SessionUser }>({ user: toSessionUser(updated) });
     } catch (e) {

@@ -28,7 +28,7 @@ export const platformFeeBps = Number(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS ??
 export const treasuryWallet = new PublicKey(env.NEXT_PUBLIC_TREASURY_WALLET);
 
 /** Fee taken off every deposit (basis points). The platform's only fee source. */
-export const depositFeeBps = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "200"); // 2%
+export const depositFeeBps = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ?? "50"); // 0.5%
 
 /** Referrer reward as bps of a referee's first credited deposit. */
 export const referralRewardBps = Number(process.env.NEXT_PUBLIC_REFERRAL_REWARD_BPS ?? "500"); // 5%

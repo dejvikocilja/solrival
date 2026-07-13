@@ -1,8 +1,12 @@
 import { z } from "zod";
 import { base58SignatureSchema } from "./../schemas/auth";
 
-/** On-chain minimum stake (0.001 SOL). Max guards fat-finger errors. */
-export const MIN_STAKE_LAMPORTS = 1_000_000n;
+/**
+ * Minimum duel stake: 0.5 SOL. Below this the platform rake and Solana network
+ * fees make a duel uneconomic for everyone, so it's a hard floor rather than a
+ * tunable. Max guards fat-finger errors (launch caps tighten it further).
+ */
+export const MIN_STAKE_LAMPORTS = 500_000_000n;
 export const MAX_STAKE_LAMPORTS = 1_000_000_000_000n; // 1000 SOL
 
 export const gameSchema = z.enum(["CLASH_ROYALE", "BRAWL_STARS"]);
@@ -48,7 +52,7 @@ export const stakeLamportsSchema = z
   .string()
   .regex(/^\d+$/, "Stake must be a positive integer (lamports)")
   .transform((s) => BigInt(s))
-  .refine((v) => v >= MIN_STAKE_LAMPORTS, { message: "Stake below minimum (0.001 SOL)" })
+  .refine((v) => v >= MIN_STAKE_LAMPORTS, { message: "Minimum stake is 0.5 SOL" })
   .refine((v) => v <= MAX_STAKE_LAMPORTS, { message: "Stake above maximum" });
 
 // ---- POST /api/duels --------------------------------------------------------

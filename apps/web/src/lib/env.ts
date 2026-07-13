@@ -134,7 +134,7 @@ const resolvers: { [K in keyof Env]: () => Env[K] } = {
   TREASURY_SECRET_KEY: () => optional(process.env['TREASURY_SECRET_KEY'], ''),
 
   /** Deposit fee in bps (the platform's only fee). Default 2%. */
-  DEPOSIT_FEE_BPS: () => parseInt(optional(process.env['NEXT_PUBLIC_DEPOSIT_FEE_BPS'], '200'), 10),
+  DEPOSIT_FEE_BPS: () => parseInt(optional(process.env['NEXT_PUBLIC_DEPOSIT_FEE_BPS'], '50'), 10),
   /** Referrer reward in bps of a referee's first deposit. Default 5%. */
   REFERRAL_REWARD_BPS: () =>
     parseInt(optional(process.env['NEXT_PUBLIC_REFERRAL_REWARD_BPS'], '500'), 10),

@@ -16,30 +16,13 @@ const SOCIAL_LINKS = {
   discord: "#", // e.g. https://discord.gg/…
 };
 
-const NAV_COLUMNS: Array<{ title: string; links: Array<{ label: string; href: string }> }> = [
-  {
-    title: "Compete",
-    links: [
-      { label: "Marketplace", href: "/marketplace" },
-      { label: "Create a duel", href: "/duels/create" },
-      { label: "Leaderboard", href: "/leaderboard" },
-    ],
-  },
-  {
-    title: "Account",
-    links: [
-      { label: "My duels", href: "/duels" },
-      { label: "Wallet", href: "/wallet" },
-      { label: "Settings", href: "/settings" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Terms of Service", href: "/terms" },
-      { label: "Privacy Policy", href: "/privacy" },
-    ],
-  },
+/**
+ * Compete/Account links are omitted on purpose: they duplicate the header nav.
+ * The footer carries only what the header cannot — legal.
+ */
+const LEGAL_LINKS: Array<{ label: string; href: string }> = [
+  { label: "Terms of Service", href: "/terms" },
+  { label: "Privacy Policy", href: "/privacy" },
 ];
 
 // Surfaces with their own chrome never show the marketing footer.
@@ -75,62 +58,45 @@ export function SiteFooter() {
   return (
     <footer className="mt-16 border-t border-border">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-        <div className="flex flex-col gap-10 md:flex-row md:justify-between">
-          {/* Brand */}
-          <div className="max-w-xs space-y-3">
-            <Link href="/" className="inline-flex items-center gap-2.5 rounded-md focus-visible:focus-ring" aria-label="SolRival home">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/solrival-emblem.png" alt="" width={28} height={28} className="h-7 w-7" />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/solrival-wordmark-white.png" alt="SolRival" className="h-4 w-auto" />
-            </Link>
-            <p className="text-body-sm text-muted">
-              Skill-based duels with real stakes. Challenge a rival, play your match, get paid the
-              moment it&apos;s verified.
-            </p>
-            <div className="flex items-center gap-1">
-              {socials.map(({ label, href, Icon }) => {
-                const live = href !== "#";
-                return (
-                  <a
-                    key={label}
-                    href={href}
-                    aria-label={live ? `SolRival on ${label}` : `${label} (coming soon)`}
-                    aria-disabled={!live}
-                    {...(live ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                    className="flex h-9 w-9 items-center justify-center rounded-md text-faint transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          {/* Legal — the only nav the header doesn't already carry */}
+          <nav aria-label="Legal">
+            <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              {LEGAL_LINKS.map((l) => (
+                <li key={l.href}>
+                  <Link
+                    href={l.href}
+                    className="rounded-sm text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
                   >
-                    <Icon className="h-[18px] w-[18px]" />
-                  </a>
-                );
-              })}
-            </div>
-          </div>
+                    {l.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
 
-          {/* Nav columns */}
-          <div className="grid grid-cols-2 gap-10 sm:gap-16">
-            {NAV_COLUMNS.map((col) => (
-              <nav key={col.title} aria-label={col.title}>
-                <h3 className="text-overline uppercase text-faint">{col.title}</h3>
-                <ul className="mt-3 space-y-2.5">
-                  {col.links.map((l) => (
-                    <li key={l.href}>
-                      <Link
-                        href={l.href}
-                        className="rounded-sm text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
-                      >
-                        {l.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            ))}
+          {/* Socials */}
+          <div className="flex items-center gap-1">
+            {socials.map(({ label, href, Icon }) => {
+              const live = href !== "#";
+              return (
+                <a
+                  key={label}
+                  href={href}
+                  aria-label={live ? `SolRival on ${label}` : `${label} (coming soon)`}
+                  aria-disabled={!live}
+                  {...(live ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-faint transition-colors hover:bg-surface-2 hover:text-fg focus-visible:focus-ring"
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                </a>
+              );
+            })}
           </div>
         </div>
 
         {/* Bottom row */}
-        <div className="mt-10 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-8 flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-caption text-faint">
             © {new Date().getFullYear()} SolRival. All rights reserved.
           </p>

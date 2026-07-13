@@ -9,7 +9,7 @@ import { Field, NumberInput, TextInput, FieldError } from "@/components/ui/field
 import { useWithdraw, type BalanceView } from "@/hooks/useCredits";
 import { ApiError } from "@/lib/api/client";
 import { solToLamports, lamportsToSol } from "@/lib/utils";
-const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "200");
+const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "50");
 
 
 /**
