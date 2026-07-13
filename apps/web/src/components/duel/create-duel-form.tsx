@@ -28,7 +28,9 @@ const GAME_OPTIONS = [
   { value: "CLASH_ROYALE", label: "Clash Royale", activeClassName: "text-cr" },
   { value: "BRAWL_STARS", label: "Brawl Stars", activeClassName: "text-bs" },
 ];
-const STAKE_PRESETS = ["0.05", "0.1", "0.25", "0.5", "1"];
+// Presets start at the 0.5 SOL minimum stake and top out at the 5 SOL
+// launch cap (see server/config/launch-caps.ts).
+const STAKE_PRESETS = ["0.5", "1", "2", "3", "5"];
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const DUEL_RAKE_BPS = Number(process.env.NEXT_PUBLIC_DUEL_RAKE_BPS ?? "500");
 

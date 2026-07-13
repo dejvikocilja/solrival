@@ -68,10 +68,11 @@ export default function AdminTreasuryPage() {
       try {
         const res = await fetch("/api/admin/treasury", { credentials: "same-origin" });
         if (!res.ok) throw new Error("Failed to load treasury");
-        const json = (await res.json()) as { data: { summary: Summary; flows: Flow[] } };
+        // `ok()` serializes the payload directly — there is no `data` envelope.
+        const json = (await res.json()) as { summary: Summary; flows: Flow[] };
         if (cancelled) return;
-        setSummary(json.data.summary);
-        setFlows(json.data.flows);
+        setSummary(json.summary);
+        setFlows(json.flows);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load treasury");
       } finally {
