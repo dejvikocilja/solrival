@@ -13,7 +13,7 @@ const display = Space_Grotesk({ subsets: ["latin"], variable: "--font-display", 
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "SolRival — Competitive duels for real stakes", template: "%s · SolRival" },
+  title: { default: "SolRival | Skill-based Solana duels", template: "SolRival | %s" },
   description:
     "Challenge players to skill-based 1v1 duels in Clash Royale and Brawl Stars, with stakes held in Solana escrow and payouts settled automatically.",
 };

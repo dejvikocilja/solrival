@@ -49,7 +49,7 @@ export function DepositCard() {
         </span>
         <div>
           <h2 className="text-sm font-semibold text-fg">Deposit</h2>
-          <p className="text-xs text-faint">Add SOL to your balance — {bpsToPercent(DEPOSIT_FEE_BPS)} fee</p>
+          <p className="text-xs text-faint">Add SOL to your balance</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

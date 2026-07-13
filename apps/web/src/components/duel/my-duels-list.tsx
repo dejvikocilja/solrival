@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowRight, Swords, Trophy } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, Swords, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { SolAmount } from "@/components/arena/sol-amount";
 import { ExpiryMeter } from "@/components/arena/expiry-meter";
@@ -45,8 +46,25 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
+/**
+ * Rows shown before the user asks for more. A player with a long history would
+ * otherwise get an endless scroll of duels they've already seen; the ones that
+ * matter are the most recent (the list is newest-first). "Show more" reveals
+ * another page at a time rather than everything at once, so the page never
+ * balloons in a single click.
+ */
+const PAGE_SIZE = 5;
+
 export function MyDuelsList({ duels }: { duels: MyDuel[]; currentUserId: string }) {
   const [tab, setTab] = React.useState<TabKey>("all");
+  const [visible, setVisible] = React.useState(PAGE_SIZE);
+
+  // Switching tabs starts a fresh page — carrying an expanded count across
+  // tabs would silently dump 40 rows on a tab the user just opened.
+  const selectTab = (key: TabKey) => {
+    setTab(key);
+    setVisible(PAGE_SIZE);
+  };
 
   const counts = React.useMemo(() => {
     const c: Record<TabKey, number> = { all: duels.length, open: 0, live: 0, done: 0 };
@@ -55,6 +73,9 @@ export function MyDuelsList({ duels }: { duels: MyDuel[]; currentUserId: string 
   }, [duels]);
 
   const filtered = tab === "all" ? duels : duels.filter((d) => (GROUP[d.status] ?? "done") === tab);
+  const shown = filtered.slice(0, visible);
+  const remaining = filtered.length - shown.length;
+  const expanded = visible > PAGE_SIZE;
 
   return (
     <div className="space-y-5">
@@ -65,7 +86,7 @@ export function MyDuelsList({ duels }: { duels: MyDuel[]; currentUserId: string 
             <button
               key={t.key}
               type="button"
-              onClick={() => setTab(t.key)}
+              onClick={() => selectTab(t.key)}
               className={cn(
                 "rounded-md border px-3 py-1.5 text-caption font-medium transition-colors focus-visible:focus-ring",
                 active
@@ -83,13 +104,42 @@ export function MyDuelsList({ duels }: { duels: MyDuel[]; currentUserId: string 
       {filtered.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
-        <ul className="space-y-3">
-          {filtered.map((d) => (
-            <li key={d.id}>
-              <MyDuelRow duel={d} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-3">
+            {shown.map((d) => (
+              <li key={d.id}>
+                <MyDuelRow duel={d} />
+              </li>
+            ))}
+          </ul>
+
+          {filtered.length > PAGE_SIZE ? (
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <p className="text-caption tabular text-faint">
+                Showing {shown.length} of {filtered.length}
+              </p>
+              <div className="flex items-center gap-2">
+                {remaining > 0 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setVisible((v) => v + PAGE_SIZE)}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                    Show {Math.min(remaining, PAGE_SIZE)} more
+                  </Button>
+                ) : null}
+                {expanded ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setVisible(PAGE_SIZE)}>
+                    <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                    Collapse
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );
