@@ -4,7 +4,7 @@ import { Swords, Flag } from "lucide-react";
 import { getCurrentUser } from "@/server/auth/session";
 import { getMyDuels } from "@/server/services/duel/my-duels";
 import { listUserDisputes, disputeWindowHours, type UserDisputeView } from "@/server/services/dispute/service";
-import { SolAmount } from "@/components/marketplace/sol-amount";
+import { SolAmount } from "@/components/arena/sol-amount";
 import { PageContainer, Section } from "@/components/ui/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -41,7 +41,7 @@ export default async function ProfilePage() {
             Connect your wallet and sign in (top right) to see your record and account details.
           </p>
           <Link
-            href="/marketplace"
+            href="/arena"
             className={cn(buttonVariants({ variant: "secondary", size: "md" }), "mt-5")}
           >
             Browse open duels

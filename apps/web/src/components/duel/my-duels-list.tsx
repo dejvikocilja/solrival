@@ -5,9 +5,9 @@ import Link from "next/link";
 import { ArrowRight, Swords, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
-import { SolAmount } from "@/components/marketplace/sol-amount";
-import { ExpiryMeter } from "@/components/marketplace/expiry-meter";
-import { GAME_META } from "@/components/marketplace/game-meta";
+import { SolAmount } from "@/components/arena/sol-amount";
+import { ExpiryMeter } from "@/components/arena/expiry-meter";
+import { GAME_META } from "@/components/arena/game-meta";
 import { cn } from "@/lib/utils";
 import type { MyDuel } from "@/server/services/duel/my-duels";
 
@@ -101,7 +101,7 @@ function MyDuelRow({ duel }: { duel: MyDuel }) {
   const rival = duel.role === "creator" ? duel.opponent : duel.creator;
   const isOpen = duel.status === "WAITING_FOR_OPPONENT" || duel.status === "CREATED";
   // `from=my-duels` tells the detail page to send "back" here rather than to
-  // the marketplace (which the player may never have visited).
+  // the arena (which the player may never have visited).
   const href = duel.inviteToken
     ? `/duels/${duel.id}?invite=${encodeURIComponent(duel.inviteToken)}&from=my-duels`
     : `/duels/${duel.id}?from=my-duels`;
@@ -203,7 +203,7 @@ function EmptyState({ tab }: { tab: TabKey }) {
         <Trophy className="h-5 w-5" aria-hidden />
       </span>
       <p className="mt-3 text-body text-muted">{msg}</p>
-      <Link href="/marketplace" className="mt-1 inline-block text-body text-rival hover:underline">
+      <Link href="/arena" className="mt-1 inline-block text-body text-rival hover:underline">
         Browse open duels
       </Link>
     </div>

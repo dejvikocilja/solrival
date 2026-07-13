@@ -28,7 +28,7 @@ export default function NotFound() {
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-2.5">
-        <Link href="/marketplace" className={cn(buttonVariants({ variant: "primary", size: "md" }))}>
+        <Link href="/arena" className={cn(buttonVariants({ variant: "primary", size: "md" }))}>
           Browse open duels
         </Link>
         <Link href="/" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>

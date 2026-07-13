@@ -40,7 +40,7 @@ export default async function LeaderboardPage() {
             The board fills up as duels are settled. Win one and you&rsquo;ll be the first name here.
           </p>
           <Link
-            href="/marketplace"
+            href="/arena"
             className={cn(buttonVariants({ variant: "primary", size: "md" }), "mt-5")}
           >
             Find a duel

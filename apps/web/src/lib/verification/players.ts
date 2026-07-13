@@ -1,7 +1,7 @@
 /**
  * Player-profile lookups against the official Supercell APIs — used when a
  * user links a game account, to prove the tag exists and to capture the
- * marketplace stats (name, trophies, level). Runs through the same proxied
+ * arena stats (name, trophies, level). Runs through the same proxied
  * client as battle verification, so it works wherever the verifier works.
  */
 

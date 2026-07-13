@@ -31,7 +31,7 @@ export default function SettingsPage() {
             Connect your wallet and sign in (top right) to edit your settings.
           </p>
           <Link
-            href="/marketplace"
+            href="/arena"
             className={cn(buttonVariants({ variant: "secondary", size: "md" }), "mt-5")}
           >
             Browse open duels
@@ -82,7 +82,7 @@ function UsernameCard({ user, onSaved }: { user: SessionUser; onSaved: () => Pro
     <Card>
       <CardHeader>
         <h2 className="font-display text-heading-3 text-fg">Username</h2>
-        <p className="mt-1 text-body-sm text-muted">This is the name rivals see on the marketplace and leaderboard.</p>
+        <p className="mt-1 text-body-sm text-muted">This is the name rivals see on the arena and leaderboard.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <Field label="Username" hint={`${trimmed.length}/20`}>

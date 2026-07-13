@@ -3,13 +3,13 @@ import { Trophy, Gauge, Target, BadgeCheck, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatInt, bpsToPercent } from "@/lib/utils";
-import type { MarketplaceDuel } from "@/server/services/duel/marketplace";
+import type { ArenaDuel } from "@/server/services/duel/arena";
 import { GAME_META } from "./game-meta";
 import { SolAmount } from "./sol-amount";
 import { Stat } from "./stat";
 import { ExpiryMeter } from "./expiry-meter";
 
-export function DuelCard({ duel }: { duel: MarketplaceDuel }) {
+export function DuelCard({ duel }: { duel: ArenaDuel }) {
   const game = GAME_META[duel.game];
 
   // The whole card is the link — bigger tap target on mobile, and there are no

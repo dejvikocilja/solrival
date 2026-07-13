@@ -4,7 +4,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
-export function MarketplaceEmptyState({ filtered }: { filtered: boolean }) {
+export function ArenaEmptyState({ filtered }: { filtered: boolean }) {
   return (
     <EmptyState
       icon={filtered ? SlidersHorizontal : Swords}
@@ -17,7 +17,7 @@ export function MarketplaceEmptyState({ filtered }: { filtered: boolean }) {
       action={
         <div className="flex flex-wrap justify-center gap-2">
           {filtered ? (
-            <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
+            <Link href="/arena" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
               Clear filters
             </Link>
           ) : null}

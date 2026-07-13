@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, ShieldCheck, Zap } from "lucide-react";
 import { listDuelsQuerySchema } from "@solrival/shared";
-import { getMarketplace } from "@/server/services/duel/marketplace";
+import { getArena } from "@/server/services/duel/arena";
 import { buttonVariants } from "@/components/ui/button";
-import { DuelCard } from "@/components/marketplace/duel-card";
+import { DuelCard } from "@/components/arena/duel-card";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -19,7 +19,7 @@ const STEPS = [
   {
     n: "01",
     title: "Challenge",
-    body: "Pick a game, set your stake and rules, and open a duel — or accept an open challenge from the marketplace.",
+    body: "Pick a game, set your stake and rules, and open a duel — or accept an open challenge from the arena.",
   },
   {
     n: "02",
@@ -34,7 +34,7 @@ const STEPS = [
 ];
 
 export default async function HomePage() {
-  const { duels } = await getMarketplace(listDuelsQuerySchema.parse({}));
+  const { duels } = await getArena(listDuelsQuerySchema.parse({}));
   const liveDuels = duels.slice(0, 3);
 
   return (
@@ -68,7 +68,7 @@ export default async function HomePage() {
               Create a duel
               <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}>
+            <Link href="/arena" className={cn(buttonVariants({ variant: "secondary", size: "lg" }))}>
               Browse open duels
             </Link>
           </div>
@@ -97,7 +97,7 @@ export default async function HomePage() {
             <span className="flex h-2 w-2 rounded-full bg-victory shadow-[0_0_8px_hsl(var(--victory))]" aria-hidden />
             <h2 className="text-overline uppercase text-muted">Live now</h2>
           </div>
-          <Link href="/marketplace" className="text-sm text-muted transition-colors hover:text-fg">
+          <Link href="/arena" className="text-sm text-muted transition-colors hover:text-fg">
             View all →
           </Link>
         </div>
@@ -184,7 +184,7 @@ export default async function HomePage() {
               </p>
             </div>
             <Link
-              href="/marketplace"
+              href="/arena"
               className={cn(buttonVariants({ variant: "primary", size: "lg" }), "shrink-0")}
             >
               Enter the arena

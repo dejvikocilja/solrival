@@ -12,11 +12,11 @@ export default function CreateDuelPage() {
   return (
     <main className="mx-auto max-w-xl px-4 pb-24 pt-6 sm:px-6 sm:pt-10">
       <Link
-        href="/marketplace"
+        href="/arena"
         className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring rounded-md"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to marketplace
+        Back to the arena
       </Link>
 
       <div className="mb-6">

@@ -61,10 +61,10 @@ export function SiteHeader() {
         </Link>
         <nav className="flex items-center gap-1.5">
           <Link
-            href="/marketplace"
+            href="/arena"
             className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden sm:inline-flex")}
           >
-            Marketplace
+            Arena
           </Link>
           <Link
             href="/leaderboard"

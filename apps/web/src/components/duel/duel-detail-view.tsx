@@ -8,9 +8,9 @@ import { ArrowLeft, ArrowRight, Check, Copy, Flag, Gamepad2, ShieldCheck, Swords
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SolAmount } from "@/components/marketplace/sol-amount";
-import { ExpiryMeter } from "@/components/marketplace/expiry-meter";
-import { GAME_META } from "@/components/marketplace/game-meta";
+import { SolAmount } from "@/components/arena/sol-amount";
+import { ExpiryMeter } from "@/components/arena/expiry-meter";
+import { GAME_META } from "@/components/arena/game-meta";
 import { RULE_META } from "@/components/duel/rule-meta";
 import { AcceptDuelModal } from "@/components/duel/accept-duel-modal";
 import { DisputeDuelModal } from "@/components/duel/dispute-duel-modal";
@@ -46,7 +46,7 @@ function shortWallet(addr: string): string {
 export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: string }) {
   const { user } = useAuth();
   // Where the user came from. My Duels links with ?from=my-duels so the back
-  // control returns them there instead of the marketplace.
+  // control returns them there instead of the arena.
   const searchParams = useSearchParams();
   const cameFromMyDuels = searchParams?.get("from") === "my-duels";
   const [accepting, setAccepting] = React.useState(false);
@@ -74,7 +74,7 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
         }
         action={
           notFound ? (
-            <Link href="/marketplace" className="w-full sm:w-auto">
+            <Link href="/arena" className="w-full sm:w-auto">
               <Button variant="secondary" className="w-full">
                 Browse open duels
               </Button>
@@ -147,7 +147,7 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
   return (
     <>
       {/* Context-aware back. From My Duels: a bare arrow returning to that list.
-          Otherwise the labelled marketplace link. `from` is set by the linking page. */}
+          Otherwise the labelled arena link. `from` is set by the linking page. */}
       {cameFromMyDuels ? (
         <Link
           href="/duels"
@@ -158,11 +158,11 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
         </Link>
       ) : (
         <Link
-          href="/marketplace"
+          href="/arena"
           className="mb-4 inline-flex items-center gap-1.5 rounded text-body-sm text-muted transition-colors hover:text-fg focus-visible:focus-ring"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back to marketplace
+          Back to the arena
         </Link>
       )}
 
@@ -223,12 +223,12 @@ export function DuelDetailView({ id, inviteToken }: { id: string; inviteToken?: 
             </Button>
           ) : isCreator && isOpen ? (
             <p className="rounded-md border border-border bg-surface-2/60 px-4 py-3 text-center text-body-sm text-muted">
-              You created this duel. Share the link to invite a rival, or wait for someone in the marketplace to accept.
+              You created this duel. Share the link to invite a rival, or wait for someone in the arena to accept.
             </p>
           ) : !isOpen ? (
             <p className="rounded-md border border-border bg-surface-2/60 px-4 py-3 text-center text-body-sm text-muted">
               {duel.status === "EXPIRED" || duel.status === "CANCELLED"
-                ? "This challenge is closed. Browse the marketplace for open duels."
+                ? "This challenge is closed. Browse the arena for open duels."
                 : duel.status === "DISPUTED"
                   ? "This duel is under dispute. Settlement is frozen while our team reviews the match — you'll be notified of the outcome."
                   : "This duel has a rival. Add them in-game and play your match — results settle automatically."}
@@ -392,7 +392,7 @@ function StateCard({
 /**
  * Shown to participants of a matched duel: the opponent's friend invite link
  * (from their linked game account) plus the play instructions. This is how two
- * strangers matched on the marketplace find each other in-game.
+ * strangers matched on the arena find each other in-game.
  */
 function PlayMatchCard({ inviteLink }: { inviteLink: string }) {
   const [copied, setCopied] = React.useState(false);

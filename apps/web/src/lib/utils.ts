@@ -18,8 +18,16 @@ export function formatInt(n: number | null | undefined): string {
 }
 
 /** 5500 bps -> "55%" */
+/**
+ * Basis points → human percent. Must NOT round to whole numbers: 50 bps is
+ * 0.5%, and Math.round would have displayed it as "1%" — misstating a fee we
+ * actually charge. Trailing zeros are trimmed, so 500 → "5%", 50 → "0.5%",
+ * 25 → "0.25%".
+ */
 export function bpsToPercent(bps: number | null | undefined): string {
-  return bps == null ? "—" : `${Math.round(bps / 100)}%`;
+  if (bps == null) return "—";
+  const pct = bps / 100;
+  return `${Number(pct.toFixed(2))}%`;
 }
 
 /**

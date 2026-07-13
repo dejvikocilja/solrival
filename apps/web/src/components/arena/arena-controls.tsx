@@ -1,12 +1,23 @@
 "use client";
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Field, NumberInput } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/**
+ * Arena controls.
+ *
+ * The advanced filters are COLLAPSED by default on every breakpoint. Six
+ * numeric inputs permanently expanded above the duel grid buried the actual
+ * product (the duels) under configuration the vast majority of visitors never
+ * touch. What stays visible is only what most people use — game and sort —
+ * plus a Filters button carrying a count, and removable chips summarising
+ * whatever is currently applied, so nothing is ever hidden *silently*.
+ */
 
 const GAME_OPTIONS = [
   { value: "", label: "All games" },
@@ -29,8 +40,8 @@ const WIN_RATE_OPTIONS = [
   { value: "8000", label: "80% and up" },
 ];
 
+/** Advanced filter keys (game lives in the always-visible row, so it's excluded). */
 const FILTER_KEYS = [
-  "game",
   "minStakeLamports",
   "maxStakeLamports",
   "minTrophies",
@@ -47,7 +58,7 @@ const solToLamports = (sol: string): string | null => {
 const lamportsToSolInput = (lamports: string | null): string =>
   lamports ? String(Number(lamports) / 1e9) : "";
 
-export function MarketplaceControls({ resultCount }: { resultCount: number }) {
+export function ArenaControls({ resultCount }: { resultCount: number }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -95,9 +106,50 @@ export function MarketplaceControls({ resultCount }: { resultCount: number }) {
 
   const activeFilterCount = FILTER_KEYS.filter((k) => get(k) !== "").length;
 
+  /** Human summary of what's applied, each chip removable in one click. */
+  const chips: Array<{ label: string; clear: () => void }> = [];
+  if (get("minStakeLamports") || get("maxStakeLamports")) {
+    const lo = minStake || "0";
+    const hi = maxStake || "∞";
+    chips.push({
+      label: `Stake ${lo}–${hi} SOL`,
+      clear: () => {
+        setMinStake("");
+        setMaxStake("");
+        update({ minStakeLamports: null, maxStakeLamports: null });
+      },
+    });
+  }
+  if (get("minWinRateBps")) {
+    chips.push({
+      label: `${Number(get("minWinRateBps")) / 100}%+ win rate`,
+      clear: () => update({ minWinRateBps: null }),
+    });
+  }
+  if (get("minTrophies") || get("maxTrophies")) {
+    chips.push({
+      label: `Trophies ${minTrophies || "0"}–${maxTrophies || "∞"}`,
+      clear: () => {
+        setMinTrophies("");
+        setMaxTrophies("");
+        update({ minTrophies: null, maxTrophies: null });
+      },
+    });
+  }
+  if (get("minAccountLevel") || get("maxAccountLevel")) {
+    chips.push({
+      label: `Level ${minLevel || "0"}–${maxLevel || "∞"}`,
+      clear: () => {
+        setMinLevel("");
+        setMaxLevel("");
+        update({ minAccountLevel: null, maxAccountLevel: null });
+      },
+    });
+  }
+
   return (
     <div className="space-y-3">
-      {/* primary row: game + sort + filter toggle */}
+      {/* Primary row — the only controls most players ever touch. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="sm:max-w-md sm:flex-1">
           <Segmented
@@ -107,18 +159,19 @@ export function MarketplaceControls({ resultCount }: { resultCount: number }) {
             onValueChange={(v) => update({ game: v || null })}
           />
         </div>
+
         <div className="flex items-center gap-2">
           <Button
-            variant="secondary"
+            variant={open || activeFilterCount > 0 ? "secondary" : "ghost"}
             size="md"
-            className="sm:hidden"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
+            aria-controls="arena-filters"
           >
             <SlidersHorizontal className="h-4 w-4" />
             Filters
             {activeFilterCount > 0 ? (
-              <span className="ml-1 rounded-full bg-rival px-1.5 text-xs text-rival-fg tabular">
+              <span className="ml-1 rounded-full bg-rival px-1.5 text-xs tabular text-rival-fg">
                 {activeFilterCount}
               </span>
             ) : null}
@@ -134,12 +187,44 @@ export function MarketplaceControls({ resultCount }: { resultCount: number }) {
         </div>
       </div>
 
-      {/* advanced filters: always shown on desktop, toggled on mobile */}
-      <div className={cn("rounded-lg border border-border bg-surface/60 p-4", open ? "block" : "hidden sm:block")}>
+      {/* Result count + active filter chips — applied filters stay visible even
+          when the panel is closed, so results are never mysteriously narrow. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-body-sm tabular text-muted">
+          {resultCount} open {resultCount === 1 ? "duel" : "duels"}
+        </span>
+        {chips.map((chip) => (
+          <button
+            key={chip.label}
+            type="button"
+            onClick={chip.clear}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 py-1 pl-2.5 pr-1.5 text-caption text-muted transition-colors hover:border-border-strong hover:text-fg focus-visible:focus-ring"
+          >
+            {chip.label}
+            <X className="h-3 w-3" aria-hidden />
+            <span className="sr-only">Remove filter</span>
+          </button>
+        ))}
+        {activeFilterCount > 0 ? (
+          <button
+            type="button"
+            onClick={clearAll}
+            className="rounded-sm text-caption text-faint underline-offset-2 transition-colors hover:text-fg hover:underline focus-visible:focus-ring"
+          >
+            Clear all
+          </button>
+        ) : null}
+      </div>
+
+      {/* Advanced filters — collapsed until asked for, on every breakpoint. */}
+      <div
+        id="arena-filters"
+        className={cn("rounded-lg border border-border bg-surface/60 p-4", open ? "block" : "hidden")}
+      >
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-4">
           <Field label="Min stake" hint="SOL">
             <NumberInput
-              placeholder="0.00"
+              placeholder="0.5"
               value={minStake}
               onChange={(e) => {
                 setMinStake(e.target.value);
@@ -188,7 +273,7 @@ export function MarketplaceControls({ resultCount }: { resultCount: number }) {
               />
             </div>
           </Field>
-          <Field label="Account level" className="col-span-2">
+          <Field label="Account level" className="col-span-2 lg:col-span-2">
             <div className="flex items-center gap-2">
               <NumberInput
                 aria-label="Minimum account level"
@@ -212,15 +297,15 @@ export function MarketplaceControls({ resultCount }: { resultCount: number }) {
             </div>
           </Field>
 
-          <div className="col-span-2 flex items-end justify-between gap-3">
-            <span className="text-sm text-muted tabular">
-              {resultCount} open {resultCount === 1 ? "duel" : "duels"}
-            </span>
+          <div className="col-span-2 flex items-end justify-end gap-2 lg:col-span-2">
             {activeFilterCount > 0 ? (
               <Button variant="ghost" size="sm" onClick={clearAll}>
                 Clear filters
               </Button>
             ) : null}
+            <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>
+              Done
+            </Button>
           </div>
         </div>
       </div>

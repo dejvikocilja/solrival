@@ -17,8 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { Field, TextInput, FieldError } from "@/components/ui/field";
-import { SolAmount } from "@/components/marketplace/sol-amount";
-import { GAME_META } from "@/components/marketplace/game-meta";
+import { SolAmount } from "@/components/arena/sol-amount";
+import { GAME_META } from "@/components/arena/game-meta";
 import { RULE_META, FRIEND_LINK_HELP } from "@/components/duel/rule-meta";
 import { CreateDuelSuccess } from "@/components/duel/create-duel-success";
 import { useCreateDuel, type CreateStatus } from "@/hooks/use-create-duel";
@@ -28,7 +28,7 @@ const GAME_OPTIONS = [
   { value: "CLASH_ROYALE", label: "Clash Royale", activeClassName: "text-cr" },
   { value: "BRAWL_STARS", label: "Brawl Stars", activeClassName: "text-bs" },
 ];
-// Presets start at the 0.5 SOL minimum stake and top out at the 5 SOL
+// Presets start at the 0.5 SOL minimum stake and top out below the 5 SOL
 // launch cap (see server/config/launch-caps.ts).
 const STAKE_PRESETS = ["0.5", "1", "2", "3", "5"];
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -238,12 +238,12 @@ export function CreateDuelForm() {
               {visibility === "PUBLIC" ? (
                 <>
                   <Globe className="h-3.5 w-3.5 text-faint" />
-                  Listed in the marketplace — any player can accept.
+                  Listed in the arena — any player can accept.
                 </>
               ) : (
                 <>
                   <Lock className="h-3.5 w-3.5 text-faint" />
-                  Hidden from the marketplace — only people with your invite link can accept.
+                  Hidden from the arena — only people with your invite link can accept.
                 </>
               )}
             </p>

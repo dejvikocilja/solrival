@@ -81,7 +81,7 @@ export default function NotificationsPage() {
           title="Sign in to see your notifications"
           description="Connect your wallet and sign in (top right) to follow your duels in real time."
           action={
-            <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
+            <Link href="/arena" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
               Browse open duels
             </Link>
           }
@@ -122,7 +122,7 @@ export default function NotificationsPage() {
               }
               action={
                 filter === "all" ? (
-                  <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
+                  <Link href="/arena" className={cn(buttonVariants({ variant: "secondary", size: "md" }))}>
                     Browse open duels
                   </Link>
                 ) : undefined

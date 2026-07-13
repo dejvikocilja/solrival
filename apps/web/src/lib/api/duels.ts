@@ -101,7 +101,7 @@ export function createDuel(body: CreateDuelBody): Promise<CreateDuelResponse> {
 
 /**
  * Fetches a single duel by its UUID. `inviteToken` is required to view a
- * PRIVATE duel you don't participate in (the marketplace only links public ones).
+ * PRIVATE duel you don't participate in (the arena only links public ones).
  */
 export function getDuel(id: string, inviteToken?: string | null): Promise<{ duel: DuelDetail }> {
   const query = inviteToken ? `?token=${encodeURIComponent(inviteToken)}` : "";

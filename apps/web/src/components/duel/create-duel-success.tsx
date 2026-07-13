@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SolAmount } from "@/components/marketplace/sol-amount";
-import { GAME_META } from "@/components/marketplace/game-meta";
+import { SolAmount } from "@/components/arena/sol-amount";
+import { GAME_META } from "@/components/arena/game-meta";
 import { RULE_META } from "@/components/duel/rule-meta";
 import type { RuleTemplate } from "@solrival/shared";
 import type { DuelSummary } from "@/lib/api/duels";
@@ -90,7 +90,7 @@ export function CreateDuelSuccess({
           <p className="text-xs text-faint">
             {isPrivate
               ? "Only people with this link can accept the duel."
-              : "Anyone can find this duel in the marketplace, or accept it directly via this link."}
+              : "Anyone can find this duel in the arena, or accept it directly via this link."}
           </p>
         </div>
 

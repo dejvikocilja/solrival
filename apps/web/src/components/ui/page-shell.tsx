@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const CONTAINER_WIDTHS = {
   content: "max-w-3xl", // focused pages: profile, wallet, a single duel, settings
-  wide: "max-w-6xl", // dense pages: marketplace grid, leaderboard
+  wide: "max-w-6xl", // dense pages: arena grid, leaderboard
   full: "max-w-7xl", // edge-to-edge shells
 } as const;
 

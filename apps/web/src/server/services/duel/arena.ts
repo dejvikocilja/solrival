@@ -7,7 +7,7 @@ function shortenWallet(addr: string): string {
   return addr.length > 8 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
 }
 
-export type MarketplaceDuel = {
+export type ArenaDuel = {
   id: string;
   shortCode: string;
   game: "CLASH_ROYALE" | "BRAWL_STARS";
@@ -21,12 +21,12 @@ export type MarketplaceDuel = {
   stats: { trophies: number | null; accountLevel: number | null; winRateBps: number | null; verified: boolean } | null;
 };
 
-export type MarketplacePage = { duels: MarketplaceDuel[]; nextCursor: string | null };
+export type ArenaPage = { duels: ArenaDuel[]; nextCursor: string | null };
 
-export async function getMarketplace(q: ListDuelsQuery): Promise<MarketplacePage> {
+export async function getArena(q: ListDuelsQuery): Promise<ArenaPage> {
   const rows = await listJoinableDuels(q);
 
-  const duels: MarketplaceDuel[] = rows.map((d) => {
+  const duels: ArenaDuel[] = rows.map((d) => {
     const { pot, payout } = computeSettlement(d.stakeLamports, d.platformFeeBps);
     return {
       id: d.id,

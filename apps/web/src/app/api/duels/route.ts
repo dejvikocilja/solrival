@@ -4,7 +4,7 @@ import { requireUser } from "@/server/auth/session";
 import { assertSameOrigin } from "@/server/guards/origin";
 import { rateLimit } from "@/server/guards/rate-limit";
 import { createCreditDuel } from "@/server/services/duel/credit-duel";
-import { getMarketplace } from "@/server/services/duel/marketplace";
+import { getArena } from "@/server/services/duel/arena";
 import { handle, ok, fail } from "@/server/http/respond";
 
 export const runtime = "nodejs";
@@ -30,6 +30,6 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return handle(async () => {
     const q = listDuelsQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams));
-    return ok(await getMarketplace(q));
+    return ok(await getArena(q));
   });
 }

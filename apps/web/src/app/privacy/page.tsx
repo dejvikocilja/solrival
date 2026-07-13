@@ -64,7 +64,7 @@ export default function PrivacyPage() {
             Solana is a public blockchain: your deposits to and withdrawals from the Platform
             treasury are publicly visible on-chain and permanently recorded, linked to your wallet
             address. Your username, linked game tags, and match results may appear in public
-            Platform surfaces such as the marketplace and leaderboard.
+            Platform surfaces such as the arena and leaderboard.
           </p>
         </LegalSection>
 

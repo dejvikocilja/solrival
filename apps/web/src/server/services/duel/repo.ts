@@ -136,7 +136,7 @@ export async function markEscrowTxConfirmed(idempotencyKey: string, signature: s
   });
 }
 
-/** Marketplace: public, joinable duels with creator stats; filtered + sorted. */
+/** Arena: public, joinable duels with creator stats; filtered + sorted. */
 export function listJoinableDuels(filter: {
   game?: "CLASH_ROYALE" | "BRAWL_STARS";
   minStakeLamports?: bigint;

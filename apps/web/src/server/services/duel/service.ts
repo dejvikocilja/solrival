@@ -87,7 +87,7 @@ export async function createDuel(user: User, input: CreateDuelInput) {
   const creator = new PublicKey(user.walletAddress);
   const escrowPda = escrowClient.escrowPda(id).toBase58();
 
-  // Link the creator's game account for this game so the marketplace can show
+  // Link the creator's game account for this game so the arena can show
   // and filter by their trophies / level / win rate.
   const creatorGameAccount = await requireLinkedGameAccount(user.id, input.game);
 

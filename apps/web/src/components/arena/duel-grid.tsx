@@ -1,7 +1,7 @@
-import type { MarketplaceDuel } from "@/server/services/duel/marketplace";
+import type { ArenaDuel } from "@/server/services/duel/arena";
 import { DuelCard } from "./duel-card";
 
-export function DuelGrid({ duels }: { duels: MarketplaceDuel[] }) {
+export function DuelGrid({ duels }: { duels: ArenaDuel[] }) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {duels.map((duel, i) => (

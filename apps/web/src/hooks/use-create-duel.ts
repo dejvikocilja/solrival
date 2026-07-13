@@ -11,7 +11,7 @@ import { ApiError } from "@/lib/api/client";
  * and opens the duel immediately — there is no wallet signature or on-chain
  * deposit. The user sees two states:
  *   creating → the server records the duel and locks the stake
- *   done     → the live duel, now waiting for a rival in the marketplace
+ *   done     → the live duel, now waiting for a rival in the arena
  */
 export type CreateStatus = "idle" | "creating" | "done" | "error";
 

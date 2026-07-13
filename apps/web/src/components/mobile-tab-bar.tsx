@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
  * the core loop. Desktop keeps the top header and never renders this
  * (`sm:hidden`).
  *
- * Five slots, matching the locked IA: Play (marketplace) · My duels · Create
+ * Five slots, matching the locked IA: Play (arena) · My duels · Create
  * (center, raised, the one primary action) · Leaderboard · Wallet. Pages already
  * reserve space for it via PageContainer's `pb-24`.
  *
@@ -31,10 +31,10 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   {
-    href: "/marketplace",
+    href: "/arena",
     label: "Play",
     icon: Gamepad2,
-    match: (p) => p === "/marketplace" || p.startsWith("/marketplace/"),
+    match: (p) => p === "/arena" || p.startsWith("/arena/"),
   },
   {
     href: "/duels",

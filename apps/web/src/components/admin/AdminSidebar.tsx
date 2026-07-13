@@ -75,13 +75,13 @@ export function AdminSidebar({ open, onClose }: AdminSidebarProps) {
       {/* Footer */}
       <div className="border-t border-border p-4">
         <Link
-          href="/marketplace"
+          href="/arena"
           className="flex items-center gap-2 text-xs text-faint transition-colors hover:text-muted"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden>
             <path d="M5 2L1 6L5 10M1 6H11" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Back to marketplace
+          Back to the arena
         </Link>
       </div>
     </aside>

@@ -39,7 +39,7 @@ export default async function MyDuelsPage() {
           <p className="mx-auto mt-1 max-w-sm text-body-sm text-muted">
             Connect your wallet and sign in (top right) to track the duels you&rsquo;ve created and accepted.
           </p>
-          <Link href="/marketplace" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "mt-5")}>
+          <Link href="/arena" className={cn(buttonVariants({ variant: "secondary", size: "md" }), "mt-5")}>
             Browse open duels
           </Link>
         </div>

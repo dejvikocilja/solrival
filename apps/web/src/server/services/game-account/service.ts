@@ -65,7 +65,7 @@ export async function listGameAccounts(userId: string): Promise<GameAccountView[
  *
  * Validates the tag against the live game API: a tag that doesn't exist is a
  * 404 → friendly 400 here. The profile's canonical tag, trophies, and level
- * are stored for the marketplace, and `lastSyncedAt` records the check. A tag
+ * are stored for the arena, and `lastSyncedAt` records the check. A tag
  * already linked by ANOTHER user is rejected — one in-game identity can't
  * back two platform accounts (it would let one person duel themself).
  */
