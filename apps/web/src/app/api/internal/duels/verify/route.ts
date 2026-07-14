@@ -1,29 +1,37 @@
 import { type NextRequest } from "next/server";
 import { runVerificationSweep } from "@/server/services/duel/verification-sweep";
-import { isAuthorizedInternal } from "@/server/guards/internal-auth";
+import { isAuthorizedCron } from "@/server/guards/internal-auth";
 import { handle, ok, fail } from "@/server/http/respond";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The sweep makes one outbound Supercell call per live duel; the default 10s
+// serverless budget would truncate a busy tick mid-settlement.
+export const maxDuration = 60;
 
 /**
- * POST /api/internal/duels/verify — verification sweep.
- * Invoked by a scheduler/keeper on the static-egress host (Supercell tokens are
- * IP-whitelisted). Runs one verification attempt per live duel and settles
- * winners / disputes timeouts. Protected by a shared secret (constant-time),
- * not user auth.
+ * /api/internal/duels/verify — verification sweep.
+ *
+ * Runs one verification attempt per in-flight duel: settles winners, refunds
+ * unverifiable duels past their window, and escalates timeouts to review.
+ *
+ * GET is what platform schedulers (e.g. Vercel Cron) call; POST is kept for
+ * manual invocation and external keepers. Both take the same path.
+ *
+ * Its own secret: this sweep MOVES MONEY (credits settle between users), so it
+ * is isolated from the benign expiry cron. Falls back to EXPIRE_CRON_SECRET so
+ * existing deployments keep working — set VERIFY_CRON_SECRET to complete the
+ * isolation, then rotate.
  */
-export async function POST(req: NextRequest) {
+async function runSweep(req: NextRequest) {
   return handle(async () => {
-    // Own secret: the verification sweep triggers settlements (credits move
-    // between users), so it warrants isolation from the benign expiry cron.
-    // Falls back to EXPIRE_CRON_SECRET so existing deployments keep working —
-    // set VERIFY_CRON_SECRET to complete the isolation, then rotate.
     const secret = process.env.VERIFY_CRON_SECRET ?? process.env.EXPIRE_CRON_SECRET;
-    if (!isAuthorizedInternal(req, secret)) {
+    if (!isAuthorizedCron(req, secret)) {
       return fail("UNAUTHORIZED", "Invalid cron secret", 401);
     }
-    const result = await runVerificationSweep();
-    return ok(result);
+    return ok(await runVerificationSweep());
   });
 }
+
+export const GET = runSweep;
+export const POST = runSweep;
