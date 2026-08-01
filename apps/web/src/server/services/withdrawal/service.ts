@@ -6,6 +6,13 @@ import {
   type WithdrawalStatus,
 } from "@solrival/db";
 import { assertWithdrawalTransition } from "@solrival/shared";
+import {
+  publishWithdrawalApproved,
+  publishWithdrawalCompleted,
+  publishWithdrawalFailed,
+  publishWithdrawalHeld,
+  publishWithdrawalRejected,
+} from "@/lib/realtime/event-publisher";
 import { PublicKey } from "@solana/web3.js";
 import { applyEntry, CreditError } from "../credits/balance";
 import { launchMaxWithdrawalPerDayLamports, formatSol } from "@/server/config/launch-caps";
@@ -13,6 +20,12 @@ import { sendFromTreasury } from "../../solana/treasury";
 
 /** Platform fee on withdrawals, in basis points (NEXT_PUBLIC_WITHDRAWAL_FEE_BPS).
  *  The user receives the amount minus this fee; the fee stays in the treasury. */
+/** Lamports → SOL for notification copy. Rounded for display only; the ledger
+ *  keeps lamports. */
+function sol(lamports: bigint): number {
+  return Number((lamports * 10_000n) / 1_000_000_000n) / 10_000;
+}
+
 const WITHDRAWAL_FEE_BPS = Number(process.env.NEXT_PUBLIC_WITHDRAWAL_FEE_BPS ?? "50"); // 0.5%
 
 /**
@@ -138,7 +151,7 @@ export async function requestWithdrawal(
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const created = await prisma.$transaction(async (tx) => {
       const withdrawal = await tx.withdrawalRequest.create({
         data: {
           userId: user.id,
@@ -164,6 +177,20 @@ export async function requestWithdrawal(
 
       return withdrawal;
     });
+
+    // A held withdrawal looks identical to a stuck one from the user's side.
+    // Publishing after commit: the notification must never be able to describe
+    // a state the transaction then rolled back.
+    if (created.status === "PENDING_REVIEW") {
+      publishWithdrawalHeld({
+        targetUserId: user.id,
+        withdrawalId: created.id,
+        amountSol: sol(amountLamports),
+        reason,
+      });
+    }
+
+    return created;
   } catch (e) {
     if (e instanceof CreditError && e.code === "INSUFFICIENT_FUNDS") {
       throw new WithdrawalError("INSUFFICIENT_FUNDS", "Not enough available balance to withdraw", 402);
@@ -223,7 +250,17 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
       });
     });
 
-    return prisma.withdrawalRequest.findUniqueOrThrow({ where: { id: w.id } });
+    const completed = await prisma.withdrawalRequest.findUniqueOrThrow({ where: { id: w.id } });
+
+    publishWithdrawalCompleted({
+      targetUserId: w.userId,
+      withdrawalId: w.id,
+      netSol: sol(netLamports),
+      feeSol: sol(feeLamports),
+      txSignature: signature,
+    });
+
+    return completed;
   } catch (err) {
     // Payout failed — revert the lock and mark FAILED for retry.
     await prisma.$transaction(async (tx) => {
@@ -241,6 +278,16 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
         data: { status: "FAILED", error: err instanceof Error ? err.message : String(err) },
       });
     });
+
+    // Funds are already back in the user's available balance. Telling them so
+    // is the difference between "the platform lost my SOL" and "it bounced,
+    // try again".
+    publishWithdrawalFailed({
+      targetUserId: w.userId,
+      withdrawalId: w.id,
+      amountSol: sol(w.amountLamports),
+    });
+
     throw new WithdrawalError("PAYOUT_FAILED", "On-chain payout failed; funds returned to balance", 502);
   }
 }
@@ -304,6 +351,12 @@ export async function reviewWithdrawal(
         metadata: { amountLamports: w.amountLamports.toString(), notes: notes ?? null },
       },
     });
+
+    publishWithdrawalApproved({
+      targetUserId: w.userId,
+      withdrawalId: withdrawalId,
+      amountSol: sol(w.amountLamports),
+    });
   } else {
     // Reject: revert the lock and close out.
     await prisma.$transaction(async (tx) => {
@@ -335,6 +388,16 @@ export async function reviewWithdrawal(
         entityId: withdrawalId,
         metadata: { amountLamports: w.amountLamports.toString(), notes: notes ?? null },
       },
+    });
+
+    // The admin's review note is surfaced to the user verbatim. A rejection
+    // with no stated reason reads as the platform seizing funds, so anything
+    // written here should be intended for the account holder to read.
+    publishWithdrawalRejected({
+      targetUserId: w.userId,
+      withdrawalId: withdrawalId,
+      amountSol: sol(w.amountLamports),
+      reason: notes ?? null,
     });
   }
 

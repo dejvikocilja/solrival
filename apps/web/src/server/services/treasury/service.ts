@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@solrival/db";
+import { solanaConnection, treasuryWallet } from "../../solana/config";
 
 /**
  * Treasury accounting.
@@ -19,9 +20,12 @@ import { prisma } from "@solrival/db";
  * fees and in-flight payouts. Withdrawing beyond this makes the platform
  * insolvent — some user's cash-out would bounce.
  *
- * `expectedBalance` is derived from our own books (deposits in − payouts out),
- * not from an RPC call: it is what the wallet SHOULD hold. Comparing it with
- * the real on-chain balance is a reconciliation task, deliberately separate.
+ * `expectedBalance` is derived from our own books (deposits in − payouts out):
+ * it is what the wallet SHOULD hold. `onChainBalance` is what it ACTUALLY
+ * holds, read live from the chain. The two are reported side by side and their
+ * difference is the reconciliation signal — books agreeing with themselves
+ * proves nothing, since a bug that miscounts a payout miscounts it in both
+ * directions. Only the chain is ground truth.
  *
  * All arithmetic is bigint (lamports) end-to-end; values cross the wire as
  * decimal strings so no precision is lost in JSON.
@@ -29,6 +33,21 @@ import { prisma } from "@solrival/db";
 
 /** Reserve held back from "safe to withdraw" for network fees / in-flight payouts. */
 const SAFETY_BUFFER_LAMPORTS = 50_000_000n; // 0.05 SOL
+
+/**
+ * Lamports the treasury held before the first deposit (initial funding), plus
+ * any manual operator top-ups. Without it the reconciliation reports the
+ * opening balance as unexplained surplus forever. Set once, in env.
+ */
+const TREASURY_BASELINE_LAMPORTS = BigInt(
+  process.env["TREASURY_BASELINE_LAMPORTS"] ?? "0",
+);
+
+/**
+ * Tolerance before a mismatch is flagged. Absorbs the per-payout network fee
+ * the treasury pays (~5000 lamports) and rounding at the edges.
+ */
+const RECONCILE_TOLERANCE_LAMPORTS = 10_000_000n; // 0.01 SOL
 
 /** Most recent treasury movements shown in the ledger table. */
 const FLOW_LIMIT = 40;
@@ -51,6 +70,34 @@ export interface TreasurySummary {
   counts: { deposits: number; withdrawals: number; settledDuels: number };
 }
 
+/**
+ * Live comparison of the books against the chain.
+ *
+ * `status`:
+ *   ok      — within tolerance; books and chain agree
+ *   surplus — chain holds MORE than the books explain. Usually a manual
+ *             top-up or an unclaimed deposit; benign but worth knowing.
+ *   deficit — chain holds LESS than the books say it should. Serious: either
+ *             SOL left outside the payout path or a payout was double-sent.
+ *   unavailable — the RPC read failed. NOT treated as agreement.
+ */
+export interface TreasuryReconciliation {
+  onChainBalanceLamports: string | null;
+  /** baseline + deposits in − payouts out. */
+  expectedOnChainLamports: string;
+  /** onChain − expectedOnChain. Positive = surplus, negative = deficit. */
+  driftLamports: string | null;
+  baselineLamports: string;
+  toleranceLamports: string;
+  status: "ok" | "surplus" | "deficit" | "unavailable";
+  /** True when the REAL balance can't cover what users are owed. This is the
+   *  solvency test that matters — the book-derived one can't see reality. */
+  onChainInsolvent: boolean | null;
+  checkedAt: string;
+  error: string | null;
+  treasuryWallet: string;
+}
+
 export interface TreasuryFlow {
   id: string;
   kind: "DEPOSIT" | "WITHDRAWAL" | "DUEL_RAKE";
@@ -65,11 +112,23 @@ export interface TreasuryFlow {
 
 export interface TreasuryReport {
   summary: TreasurySummary;
+  reconciliation: TreasuryReconciliation;
   flows: TreasuryFlow[];
 }
 
+/** Reads the treasury's real balance. Never throws: an RPC outage must degrade
+ *  the panel to "unavailable", not blank the whole treasury page. */
+async function readOnChainBalance(): Promise<{ lamports: bigint | null; error: string | null }> {
+  try {
+    const lamports = await solanaConnection.getBalance(treasuryWallet, "confirmed");
+    return { lamports: BigInt(lamports), error: null };
+  } catch (e) {
+    return { lamports: null, error: e instanceof Error ? e.message : "RPC unavailable" };
+  }
+}
+
 export async function getTreasuryReport(): Promise<TreasuryReport> {
-  const [deposits, withdrawals, settledDuels, balances] = await Promise.all([
+  const [deposits, withdrawals, settledDuels, balances, onChain] = await Promise.all([
     prisma.deposit.findMany({
       where: { status: "CREDITED" },
       select: {
@@ -103,6 +162,7 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
     prisma.userBalance.aggregate({
       _sum: { availableLamports: true, lockedLamports: true },
     }),
+    readOnChainBalance(),
   ]);
 
   // ── Money in / out of the wallet ──
@@ -162,6 +222,34 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
     },
   };
 
+  // ── Reconciliation: books vs chain ──
+  const expectedOnChain = TREASURY_BASELINE_LAMPORTS + expectedBalance;
+  const drift = onChain.lamports === null ? null : onChain.lamports - expectedOnChain;
+
+  const status: TreasuryReconciliation["status"] =
+    drift === null
+      ? "unavailable"
+      : drift > RECONCILE_TOLERANCE_LAMPORTS
+        ? "surplus"
+        : drift < -RECONCILE_TOLERANCE_LAMPORTS
+          ? "deficit"
+          : "ok";
+
+  const reconciliation: TreasuryReconciliation = {
+    onChainBalanceLamports: onChain.lamports === null ? null : onChain.lamports.toString(),
+    expectedOnChainLamports: expectedOnChain.toString(),
+    driftLamports: drift === null ? null : drift.toString(),
+    baselineLamports: TREASURY_BASELINE_LAMPORTS.toString(),
+    toleranceLamports: RECONCILE_TOLERANCE_LAMPORTS.toString(),
+    status,
+    // The solvency question that actually matters: can the real wallet cover
+    // every lamport users could ask for right now?
+    onChainInsolvent: onChain.lamports === null ? null : onChain.lamports < liabilities,
+    checkedAt: new Date().toISOString(),
+    error: onChain.error,
+    treasuryWallet: treasuryWallet.toBase58(),
+  };
+
   // ── Unified movement ledger, newest first ──
   const flows: TreasuryFlow[] = [
     ...deposits.map((d) => ({
@@ -198,5 +286,5 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, FLOW_LIMIT);
 
-  return { summary, flows };
+  return { summary, reconciliation, flows };
 }

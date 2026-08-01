@@ -211,6 +211,68 @@ export function toNotification(
       }
     }
 
+    case 'withdrawal.held':
+      return {
+        ...base,
+        title: 'Withdrawal Under Review',
+        description: event.reason
+          ? `Your ◎${event.amountSol} withdrawal is on hold: ${event.reason} Your funds are safe and stay reserved while our team reviews it.`
+          : `Your ◎${event.amountSol} withdrawal needs a manual check before it can be sent. Your funds are safe and stay reserved in the meantime.`,
+        actionLabel: 'View wallet',
+        actionHref: '/wallet',
+      }
+
+    case 'withdrawal.approved':
+      return {
+        ...base,
+        title: 'Withdrawal Approved',
+        description: `Your ◎${event.amountSol} withdrawal was approved and is queued for payout. You'll be notified when it lands.`,
+        actionLabel: 'View wallet',
+        actionHref: '/wallet',
+      }
+
+    case 'withdrawal.rejected':
+      return {
+        ...base,
+        title: 'Withdrawal Rejected',
+        description: event.reason
+          ? `Your ◎${event.amountSol} withdrawal was not approved: ${event.reason} The full amount has been returned to your available balance.`
+          : `Your ◎${event.amountSol} withdrawal was not approved. The full amount has been returned to your available balance — contact support if you'd like an explanation.`,
+        actionLabel: 'View wallet',
+        actionHref: '/wallet',
+      }
+
+    case 'withdrawal.completed':
+      return {
+        ...base,
+        title: 'Withdrawal Sent',
+        description: `◎${event.netSol} has been sent to your wallet${
+          event.feeSol > 0 ? ` (◎${event.feeSol} network fee)` : ''
+        }. Tap to verify it on-chain.`,
+        actionLabel: 'View transaction',
+        actionHref: `https://explorer.solana.com/tx/${event.txSignature}`,
+      }
+
+    case 'withdrawal.failed':
+      return {
+        ...base,
+        title: 'Withdrawal Failed',
+        description: `Your ◎${event.amountSol} withdrawal couldn't be sent. Nothing was lost — the full amount is back in your available balance and you can try again.`,
+        actionLabel: 'Try again',
+        actionHref: '/wallet',
+      }
+
+    case 'deposit.credited':
+      return {
+        ...base,
+        title: 'Deposit Credited',
+        description: `◎${event.creditedSol} has been added to your balance${
+          event.feeSol > 0 ? ` (◎${event.feeSol} deposit fee)` : ''
+        }. You're ready to duel.`,
+        actionLabel: 'Find a duel',
+        actionHref: '/',
+      }
+
     default:
       return null
   }

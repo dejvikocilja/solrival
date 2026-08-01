@@ -5,6 +5,7 @@ import { applyEntry } from "../credits/balance";
 import { rewardOnFirstDeposit } from "../referral/service";
 import { depositFeeBps, treasuryWallet } from "../../solana/config";
 import { DepositVerificationError, verifyDeposit } from "./onchain";
+import { publishDepositCredited } from "@/lib/realtime/event-publisher";
 
 /**
  * Deposit crediting. The user submits the signature of a SOL transfer they made
@@ -14,6 +15,7 @@ import { DepositVerificationError, verifyDeposit } from "./onchain";
  */
 
 const BPS_DENOMINATOR = 10_000n;
+const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 export class DepositError extends Error {
   constructor(
@@ -203,7 +205,20 @@ export async function finalizeDeposit(
     return row;
   });
 
-  return settled ?? prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } });
+  if (settled) {
+    // Fires from the request path AND the sweep, so a deposit that credits
+    // minutes after the user closed the tab still reaches them.
+    publishDepositCredited({
+      targetUserId: settled.userId,
+      depositId: settled.id,
+      creditedSol: Number((credited * 10_000n) / LAMPORTS_PER_SOL) / 10_000,
+      feeSol: Number((fee * 10_000n) / LAMPORTS_PER_SOL) / 10_000,
+      txSignature: settled.txSignature,
+    });
+    return settled;
+  }
+
+  return prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } });
 }
 
 export type DepositSweepResult = {

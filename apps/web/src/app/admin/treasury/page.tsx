@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Wallet, TrendingUp, Landmark, ShieldAlert, ArrowDownLeft, ArrowUpRight, Swords } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Wallet, TrendingUp, Landmark, ShieldAlert, ArrowDownLeft, ArrowUpRight, Swords,
+  RefreshCw,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ReconciliationPanel, type Reconciliation } from "@/components/admin/ReconciliationPanel";
 import { StatCard } from "@/components/admin/StatCard";
 import { DataTable, type Column } from "@/components/admin/DataTable";
 import { EmptyState } from "@/components/admin/EmptyState";
@@ -57,32 +62,31 @@ const KIND_META: Record<Flow["kind"], { label: string; icon: React.ReactNode }> 
 };
 
 export default function AdminTreasuryPage() {
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [flows, setFlows] = useState<Flow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Polled rather than fetched once: the treasury is the page an operator
+  // leaves open while payouts run, and a frozen balance there is misleading in
+  // exactly the moments it matters.
+  const query = useQuery({
+    queryKey: ["admin-treasury"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/treasury", { credentials: "same-origin" });
+      if (!res.ok) throw new Error("Failed to load treasury");
+      // `ok()` serializes the payload directly — there is no `data` envelope.
+      return (await res.json()) as {
+        summary: Summary;
+        reconciliation: Reconciliation;
+        flows: Flow[];
+      };
+    },
+    refetchInterval: 20_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/admin/treasury", { credentials: "same-origin" });
-        if (!res.ok) throw new Error("Failed to load treasury");
-        // `ok()` serializes the payload directly — there is no `data` envelope.
-        const json = (await res.json()) as { summary: Summary; flows: Flow[] };
-        if (cancelled) return;
-        setSummary(json.summary);
-        setFlows(json.flows);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load treasury");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const summary = query.data?.summary ?? null;
+  const reconciliation = query.data?.reconciliation ?? null;
+  const flows = query.data?.flows ?? [];
+  const loading = query.isLoading;
+  const error = query.isError ? "Failed to load treasury" : null;
 
   const columns: Column<Flow>[] = [
     {
@@ -146,14 +150,28 @@ export default function AdminTreasuryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
         <h1 className="font-display text-heading-2 text-fg">Treasury</h1>
         <p className="mt-1 text-body-sm text-muted">
           The treasury wallet holds user balances <em>and</em> platform profit. Only the{" "}
           <span className="text-fg">safe to withdraw</span> figure is genuinely yours — taking more
           would leave users unable to cash out.
         </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void query.refetch()}
+          disabled={query.isFetching}
+          aria-label="Refresh treasury"
+        >
+          <RefreshCw className={query.isFetching ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          {query.isFetching ? "Refreshing" : "Refresh"}
+        </Button>
       </div>
+
+      {reconciliation ? <ReconciliationPanel data={reconciliation} /> : null}
 
       {summary.insolvent ? (
         <div className="flex items-start gap-2.5 rounded-lg border border-danger/40 bg-danger/[0.07] p-4">

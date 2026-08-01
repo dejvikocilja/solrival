@@ -27,6 +27,12 @@ import type {
   TournamentMatchReadyEvent,
   TournamentMatchCompletedEvent,
   TournamentCompletedEvent,
+  WithdrawalHeldEvent,
+  WithdrawalApprovedEvent,
+  WithdrawalRejectedEvent,
+  WithdrawalCompletedEvent,
+  WithdrawalFailedEvent,
+  DepositCreditedEvent,
 } from './types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -114,4 +120,52 @@ export function publishTournamentCompleted(
   payload: Omit<TournamentCompletedEvent, 'id' | 'kind' | 'occurredAt'>,
 ): void {
   dispatch({ ...meta(), kind: 'tournament.completed', ...payload })
+}
+
+// ─── Credits: deposits and withdrawals ───────────────────────────────────────
+//
+// `targetUserId` is required (not optional) on every publisher below. These
+// events describe one user's money — an untargeted publish would fan a
+// person's balance movements out to every connected client.
+
+export function publishWithdrawalHeld(
+  payload: Omit<WithdrawalHeldEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<WithdrawalHeldEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'withdrawal.held', ...payload })
+}
+
+export function publishWithdrawalApproved(
+  payload: Omit<WithdrawalApprovedEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<WithdrawalApprovedEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'withdrawal.approved', ...payload })
+}
+
+export function publishWithdrawalRejected(
+  payload: Omit<WithdrawalRejectedEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<WithdrawalRejectedEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'withdrawal.rejected', ...payload })
+}
+
+export function publishWithdrawalCompleted(
+  payload: Omit<WithdrawalCompletedEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<WithdrawalCompletedEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'withdrawal.completed', ...payload })
+}
+
+export function publishWithdrawalFailed(
+  payload: Omit<WithdrawalFailedEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<WithdrawalFailedEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'withdrawal.failed', ...payload })
+}
+
+export function publishDepositCredited(
+  payload: Omit<DepositCreditedEvent, 'id' | 'kind' | 'occurredAt'> &
+    Required<Pick<DepositCreditedEvent, 'targetUserId'>>,
+): void {
+  dispatch({ ...meta(), kind: 'deposit.credited', ...payload })
 }

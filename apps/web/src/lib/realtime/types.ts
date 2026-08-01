@@ -12,6 +12,12 @@ export type RealtimeEventKind =
   | 'tournament.match_ready'
   | 'tournament.match_completed'
   | 'tournament.completed'
+  | 'withdrawal.held'
+  | 'withdrawal.approved'
+  | 'withdrawal.rejected'
+  | 'withdrawal.completed'
+  | 'withdrawal.failed'
+  | 'deposit.credited'
 
 // ─── Base event ───────────────────────────────────────────────────────────────
 
@@ -120,6 +126,59 @@ export interface DisputeResolvedEvent extends BaseEvent {
   winnerTag: string | null
 }
 
+// ─── Credits: money entering and leaving the platform ────────────────────────
+//
+// Every event below MUST carry `targetUserId`. These describe one person's
+// money; an untargeted publish broadcasts it to every connected client.
+
+/** Withdrawal parked for manual review (an active dispute blocks auto-approval). */
+export interface WithdrawalHeldEvent extends BaseEvent {
+  kind: 'withdrawal.held'
+  withdrawalId: string
+  amountSol: number
+  /** Why it was held, e.g. the open dispute blocking it. */
+  reason: string | null
+}
+
+export interface WithdrawalApprovedEvent extends BaseEvent {
+  kind: 'withdrawal.approved'
+  withdrawalId: string
+  amountSol: number
+}
+
+export interface WithdrawalRejectedEvent extends BaseEvent {
+  kind: 'withdrawal.rejected'
+  withdrawalId: string
+  amountSol: number
+  /** Admin's review note, surfaced verbatim. A rejection with no stated reason
+   *  is worse than no notification, so this is deliberately user-visible. */
+  reason: string | null
+}
+
+export interface WithdrawalCompletedEvent extends BaseEvent {
+  kind: 'withdrawal.completed'
+  withdrawalId: string
+  /** What actually landed on-chain, net of the withdrawal fee. */
+  netSol: number
+  feeSol: number
+  /** On-chain signature so the user can verify the payout independently. */
+  txSignature: string
+}
+
+export interface WithdrawalFailedEvent extends BaseEvent {
+  kind: 'withdrawal.failed'
+  withdrawalId: string
+  amountSol: number
+}
+
+export interface DepositCreditedEvent extends BaseEvent {
+  kind: 'deposit.credited'
+  depositId: string
+  creditedSol: number
+  feeSol: number
+  txSignature: string
+}
+
 // ─── Union ────────────────────────────────────────────────────────────────────
 
 export type RealtimeEvent =
@@ -134,6 +193,12 @@ export type RealtimeEvent =
   | TournamentMatchReadyEvent
   | TournamentMatchCompletedEvent
   | TournamentCompletedEvent
+  | WithdrawalHeldEvent
+  | WithdrawalApprovedEvent
+  | WithdrawalRejectedEvent
+  | WithdrawalCompletedEvent
+  | WithdrawalFailedEvent
+  | DepositCreditedEvent
 
 /** Map from kind → concrete event type, used for type-safe subscriptions. */
 export type EventMap = {
