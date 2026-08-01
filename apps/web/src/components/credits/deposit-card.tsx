@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { toast } from "sonner";
 import { ArrowDownToLine } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -17,6 +18,7 @@ import { solToLamports, lamportsToSol, bpsToPercent } from "@/lib/utils";
  */
 export function DepositCard() {
   const { connected } = useWallet();
+  const { setVisible } = useWalletModal();
   const deposit = useDeposit();
   const [amount, setAmount] = useState("");
 
@@ -28,8 +30,18 @@ export function DepositCard() {
     if (!lamports) return;
     try {
       const res = await deposit.mutateAsync(lamports);
-      toast.success(`Deposited — ◎${lamportsToSol(res.deposit.creditedLamports)} added to your balance`);
       setAmount("");
+      if (res.deposit.status === "CREDITED") {
+        toast.success(
+          `Deposited — ◎${lamportsToSol(res.deposit.creditedLamports)} added to your balance`,
+        );
+      } else if (res.deposit.status === "REJECTED") {
+        toast.error(res.deposit.error ?? "Deposit could not be verified");
+      } else {
+        // Recorded but not yet finalized. The sweep credits it; the balance
+        // query is polling, so it appears on its own. Not an error state.
+        toast.success("Deposit received — your balance updates as soon as the network finalizes it");
+      }
     } catch (e) {
       if (e instanceof DepositCancelledError) {
         toast("Deposit cancelled"); // neutral, not an error
@@ -76,12 +88,17 @@ export function DepositCard() {
           </dl>
         ) : null}
 
+        {/* A signed-in session does NOT imply a live wallet connection: the
+            session cookie outlives the adapter, so a wallet that auto-locks or
+            is switched leaves `connected` false. Disabling the button here
+            stranded the user with no way to reconnect — it now opens the
+            wallet modal instead. */}
         <Button
           className="w-full"
-          disabled={!connected || !lamports || deposit.isPending}
-          onClick={() => void submit()}
+          disabled={deposit.isPending || (connected && !lamports)}
+          onClick={() => (connected ? void submit() : setVisible(true))}
         >
-          {deposit.isPending ? "Confirming…" : connected ? "Deposit SOL" : "Connect a wallet"}
+          {deposit.isPending ? "Confirming…" : connected ? "Deposit SOL" : "Connect wallet"}
         </Button>
         <p className="text-xs text-faint">
           You&apos;ll approve one transfer in your wallet. Funds are credited after the network finalizes the transaction.

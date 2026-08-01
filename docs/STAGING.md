@@ -159,15 +159,16 @@ pnpm --filter web smoke
 
 ## Step 7 — Set up the schedulers
 
-Three sweeps must run continuously. **Nothing works without them**: duels never verify, nothing expires, withdrawals never pay out.
+Four sweeps must run continuously. **Nothing works without them**: deposits never credit, duels never verify, nothing expires, withdrawals never pay out.
 
 | Endpoint | How often | Secret to use | Why |
 |---|---|---|---|
 | `/api/internal/duels/verify` | every **1 min** | `VERIFY_CRON_SECRET` | settles duels — moves money |
 | `/api/internal/withdrawals/process` | every **2 min** | `WITHDRAWAL_CRON_SECRET` | pays out withdrawals |
 | `/api/internal/duels/expire` | every **5 min** | `EXPIRE_CRON_SECRET` | expires unaccepted duels |
+| `/api/internal/deposits/sweep` | every **1 min** | `VERIFY_CRON_SECRET` | credits deposits the browser did not finish — **required**, a missed sweep leaves user SOL in the treasury uncredited |
 
-All three accept **GET** (what schedulers send) and **POST**, authorised by `Authorization: Bearer <secret>`.
+All four accept **GET** (what schedulers send) and **POST**, authorised by `Authorization: Bearer <secret>`.
 
 ### Option A — free external scheduler (recommended for staging)
 
@@ -189,7 +190,8 @@ Add this block to `apps/web/vercel.json` and redeploy. Vercel authenticates itse
   "crons": [
     { "path": "/api/internal/duels/verify",         "schedule": "* * * * *" },
     { "path": "/api/internal/withdrawals/process",  "schedule": "*/2 * * * *" },
-    { "path": "/api/internal/duels/expire",         "schedule": "*/5 * * * *" }
+    { "path": "/api/internal/duels/expire",         "schedule": "*/5 * * * *" },
+    { "path": "/api/internal/deposits/sweep",       "schedule": "* * * * *" }
   ]
 ```
 

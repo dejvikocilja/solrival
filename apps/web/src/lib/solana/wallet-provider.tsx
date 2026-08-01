@@ -24,13 +24,33 @@ export function SolanaWalletProvider({ children }: { children: ReactNode }) {
     return rpc ? rpc : clusterApiUrl(cluster);
   }, []);
 
+  /**
+   * web3.js derives the websocket URL from the HTTP endpoint when none is
+   * given, and that derivation drops the query string — which silently strips
+   * the `?api-key=` most providers authenticate with, producing an opaque
+   * "ws error: undefined". Deriving it here preserves the full URL, and
+   * NEXT_PUBLIC_SOLANA_WS_URL overrides it for providers that serve
+   * websockets from a different host.
+   */
+  const wsEndpoint = useMemo(() => {
+    const explicit = process.env.NEXT_PUBLIC_SOLANA_WS_URL?.trim();
+    if (explicit) return explicit;
+    try {
+      const url = new URL(endpoint);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      return url.toString();
+    } catch {
+      return undefined; // fall back to web3.js's own derivation
+    }
+  }, [endpoint]);
+
   const wallets = useMemo(
     () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
     [],
   );
 
   return (
-    <ConnectionProvider endpoint={endpoint}>
+    <ConnectionProvider endpoint={endpoint} config={{ commitment: "confirmed", wsEndpoint }}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>

@@ -20,6 +20,9 @@ import "server-only";
 const VERIFY_INTERVAL_MS = 60_000; // production: ~30–60s
 const EXPIRE_INTERVAL_MS = 120_000; // production: ~1–5min
 const WITHDRAWAL_INTERVAL_MS = 120_000; // production: ~1–2min
+// Faster than the others: this one is user-facing latency — a deposit the
+// browser failed to finish should still land in well under a minute.
+const DEPOSIT_INTERVAL_MS = 30_000; // production: ~30s
 
 /** Guards against double-registration across Next.js hot reloads. */
 declare global {
@@ -53,6 +56,7 @@ export function startDevCron(): void {
     verifySec: VERIFY_INTERVAL_MS / 1000,
     expireSec: EXPIRE_INTERVAL_MS / 1000,
     withdrawalsSec: WITHDRAWAL_INTERVAL_MS / 1000,
+    depositsSec: DEPOSIT_INTERVAL_MS / 1000,
     note: "dev only — production uses external cron. Disable with DEV_CRON=off",
   });
 
@@ -76,4 +80,11 @@ export function startDevCron(): void {
       return processApprovedWithdrawals();
     });
   }, WITHDRAWAL_INTERVAL_MS).unref();
+
+  setInterval(() => {
+    void safely("deposits", async () => {
+      const { sweepDetectedDeposits } = await import("@/server/services/deposit/service");
+      return sweepDetectedDeposits();
+    });
+  }, DEPOSIT_INTERVAL_MS).unref();
 }

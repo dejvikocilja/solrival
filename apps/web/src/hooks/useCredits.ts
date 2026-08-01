@@ -54,6 +54,39 @@ export const DEPOSIT_FEE_BPS = Number(process.env.NEXT_PUBLIC_DEPOSIT_FEE_BPS ??
 // Upper bound for a single-transfer fee (5000 lamports/signature) + headroom.
 const FEE_BUFFER_LAMPORTS = 10_000n;
 
+/** What the claim endpoint returns. `status` drives the UI: a DETECTED deposit
+ *  is recorded and will credit itself, not an error the user must act on. */
+export type DepositClaimView = {
+  id: string;
+  status: "DETECTED" | "CONFIRMED" | "CREDITED" | "REJECTED";
+  txSignature: string;
+  creditedLamports: string;
+  error: string | null;
+};
+
+/**
+ * Retries an idempotent call with a fixed backoff. Used only for the deposit
+ * claim, where a transient network blip must not cost the user their transfer.
+ */
+async function withRetries<T>(fn: () => Promise<T>, attempts: number, delayMs: number): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      // A verdict the server has already reached is final — retrying can't
+      // change it. Network failures (status 0) and 5xx are retried; so is a
+      // rate limit, which is temporary by definition.
+      const final =
+        e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== "RATE_LIMITED";
+      if (final) throw e;
+      lastError = e;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 /** Thrown when the user dismisses the wallet popup — a cancel, not a real error. */
 export class DepositCancelledError extends Error {
   constructor() {
@@ -138,35 +171,41 @@ export function useDeposit() {
         throw e;
       }
 
-      // Wait for FINALIZED before telling the server: the deposit verifier reads
-      // the chain at `finalized`, so confirming only at `confirmed` would fail
-      // server-side while the SOL has already left the wallet.
-      await connection.confirmTransaction(
-        { signature, blockhash, lastValidBlockHeight },
-        "finalized",
-      );
+      // ── The SOL has now left the wallet. Everything below is recovery. ─────
+      //
+      // The signature is posted to the server IMMEDIATELY, before any attempt
+      // to confirm it on-chain. The server persists it and credits it from the
+      // sweep whatever happens next, so a dropped connection, a locked wallet,
+      // or a closed tab can no longer strand a real transfer in the treasury.
+      //
+      // Deliberately NOT using connection.confirmTransaction: it subscribes
+      // over a websocket, and a websocket that won't open (rate-limited public
+      // RPC, restrictive network) threw before the claim was ever sent — the
+      // exact failure that lost deposits. Server polling needs no socket.
+      const claim = () =>
+        apiPost<{ deposit: DepositClaimView }>("/api/deposits", { signature });
 
-      // Load-balanced RPC providers don't guarantee read-your-write across
-      // nodes: the node that finalized our confirmation may not be the node the
-      // SERVER queries, which can briefly report "transaction not found" for a
-      // genuinely finalized tx. DEPOSIT_UNVERIFIED is therefore retryable — the
-      // signature is idempotent server-side, so re-posting can never
-      // double-credit. Poll for up to ~45s before surfacing a failure.
-      const CONFIRM_ATTEMPTS = 15;
-      const CONFIRM_INTERVAL_MS = 3_000;
-      for (let attempt = 1; ; attempt++) {
+      // The claim itself is retried hard: losing it is the one outcome worth
+      // avoiding at any cost, and it is idempotent.
+      let result = await withRetries(claim, 4, 1_500);
+      if (result.deposit.status === "CREDITED") return result;
+
+      // Finalization takes ~15–30s. Poll the server, which re-verifies against
+      // the chain on each call. Giving up here is not a failure: the row exists
+      // and the sweep will credit it.
+      const POLL_ATTEMPTS = 20;
+      const POLL_INTERVAL_MS = 3_000;
+      for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
         try {
-          return await apiPost<{ deposit: { id: string; creditedLamports: string } }>(
-            "/api/deposits",
-            { signature },
-          );
-        } catch (e) {
-          const rpcLag =
-            e instanceof ApiError && e.code === "DEPOSIT_UNVERIFIED" && attempt < CONFIRM_ATTEMPTS;
-          if (!rpcLag) throw e;
-          await new Promise((r) => setTimeout(r, CONFIRM_INTERVAL_MS));
+          result = await claim();
+          if (result.deposit.status === "CREDITED") return result;
+          if (result.deposit.status === "REJECTED") return result;
+        } catch {
+          // Transient — the deposit is already recorded; keep polling.
         }
       }
+      return result;
     },
     [connection, publicKey, sendTransaction],
   );

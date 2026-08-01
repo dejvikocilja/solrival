@@ -18,7 +18,17 @@ export type VerifiedDeposit = {
 export class DepositVerificationError extends Error {
   status = 400;
   code = "DEPOSIT_UNVERIFIED";
-  constructor(message: string) {
+  /**
+   * True when the failure may resolve on its own — the transaction simply is
+   * not finalized (or not yet visible on the RPC node we asked). The deposit
+   * stays DETECTED and the sweep retries. False for verdicts that can never
+   * change (failed on-chain, wrong recipient, no treasury credit), which are
+   * terminal and mark the deposit REJECTED.
+   */
+  constructor(
+    message: string,
+    public retryable = false,
+  ) {
     super(message);
     this.name = "DepositVerificationError";
   }
@@ -34,7 +44,10 @@ export async function verifyDeposit(signature: string): Promise<VerifiedDeposit>
     commitment: depositCommitment,
     maxSupportedTransactionVersion: 0,
   });
-  if (!tx) throw new DepositVerificationError("Transaction not found or not yet finalized");
+  // Retryable: a just-submitted transfer is legitimately absent until it
+  // finalizes (~15–30s), and load-balanced RPC pools can briefly miss a
+  // finalized tx on the node we happened to hit.
+  if (!tx) throw new DepositVerificationError("Transaction not found or not yet finalized", true);
   if (tx.meta?.err) throw new DepositVerificationError("Transaction failed on-chain");
 
   const keys = tx.transaction.message.getAccountKeys();

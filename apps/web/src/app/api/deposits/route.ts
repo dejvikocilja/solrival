@@ -3,7 +3,7 @@ import { confirmDepositSchema, ledgerQuerySchema } from "@solrival/shared";
 import { requireUser } from "@/server/auth/session";
 import { assertSameOrigin } from "@/server/guards/origin";
 import { rateLimit } from "@/server/guards/rate-limit";
-import { confirmDeposit, depositConfig, listDeposits, toDepositView } from "@/server/services/deposit/service";
+import { claimDeposit, depositConfig, listDeposits, toDepositView } from "@/server/services/deposit/service";
 import { handle, ok, fail } from "@/server/http/respond";
 
 export const runtime = "nodejs";
@@ -20,8 +20,15 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/deposits — confirm an on-chain deposit by its signature. The server
- * verifies the transfer against the chain and credits the balance net of fee.
+ * POST /api/deposits — claim an on-chain deposit by its signature.
+ *
+ * The signature is persisted immediately (DETECTED), then verified against the
+ * chain and credited net of fee. Recording first is what makes a deposit
+ * unlosable: the client may die at any point after broadcasting the transfer
+ * and the sweep will still finish the job.
+ *
+ * 201 — credited. 202 — accepted, not yet finalized (crediting automatically).
+ * Idempotent on the signature; re-posting can never double-credit.
  */
 export async function POST(req: NextRequest) {
   return handle(async () => {
@@ -32,7 +39,10 @@ export async function POST(req: NextRequest) {
     if (!rl.ok) return fail("RATE_LIMITED", "Too many deposit confirmations — try again shortly", 429);
 
     const { signature } = confirmDepositSchema.parse(await req.json());
-    const deposit = await confirmDeposit(user, signature);
-    return ok({ deposit: toDepositView(deposit) }, { status: 201 });
+    const deposit = await claimDeposit(user, signature);
+    return ok(
+      { deposit: toDepositView(deposit) },
+      { status: deposit.status === "CREDITED" ? 201 : 202 },
+    );
   });
 }
