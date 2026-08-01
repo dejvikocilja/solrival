@@ -24,6 +24,7 @@ interface Summary {
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;
+  baselineLamports: string;
   depositFeesLamports: string;
   withdrawalFeesLamports: string;
   duelRakeLamports: string;

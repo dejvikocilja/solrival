@@ -94,9 +94,23 @@ function pctChange(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100;
 }
 
-/** Maps a bucket to the Postgres date_trunc unit. Never interpolated from user
- *  input — only from this closed set — so it cannot carry SQL injection. */
-const TRUNC_UNIT: Record<Bucket, string> = { day: "day", week: "week", month: "month" };
+/**
+ * Pre-built SQL fragments per bucket.
+ *
+ * These are literal `Prisma.sql` fragments from a closed set — nothing derived
+ * from user input is ever interpolated into SQL text, so injection is
+ * structurally impossible rather than merely guarded against.
+ *
+ * They must be embedded via the FUNCTION form `prisma.$queryRaw(Prisma.sql\`…\`)`.
+ * In the tagged-template form (`prisma.$queryRaw\`…\``) every `${}` is bound as
+ * a query parameter, including SQL fragments — Prisma serialises the fragment
+ * object to JSON, and Postgres then rejects `date_trunc(jsonb, timestamptz)`.
+ */
+const UNIT_SQL: Record<Bucket, { trunc: Prisma.Sql; step: Prisma.Sql }> = {
+  day: { trunc: Prisma.sql`'day'`, step: Prisma.sql`interval '1 day'` },
+  week: { trunc: Prisma.sql`'week'`, step: Prisma.sql`interval '1 week'` },
+  month: { trunc: Prisma.sql`'month'`, step: Prisma.sql`interval '1 month'` },
+};
 
 type BucketRow = { bucket: Date; count: bigint; lamports: bigint };
 
@@ -106,46 +120,46 @@ type BucketRow = { bucket: Date; count: bigint; lamports: bigint };
  * rather than the chart silently closing over missing days.
  */
 async function duelSeries(range: ResolvedRange): Promise<BucketRow[]> {
-  const unit = TRUNC_UNIT[range.bucket];
-  return prisma.$queryRaw<BucketRow[]>`
+  const u = UNIT_SQL[range.bucket];
+  return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
     SELECT
-      g.bucket                                                   AS bucket,
-      COALESCE(COUNT(d.id), 0)::bigint                           AS count,
-      COALESCE(SUM(d.stake_lamports * 2), 0)::bigint             AS lamports
+      g.bucket                                       AS bucket,
+      COALESCE(COUNT(d.id), 0)::bigint               AS count,
+      COALESCE(SUM(d.stake_lamports * 2), 0)::bigint AS lamports
     FROM generate_series(
-      date_trunc(${Prisma.raw(`'${unit}'`)}, ${range.from}::timestamptz),
+      date_trunc(${u.trunc}, ${range.from}::timestamptz),
       ${range.toExclusive}::timestamptz - interval '1 microsecond',
-      ${Prisma.raw(`'1 ${unit}'`)}::interval
+      ${u.step}
     ) AS g(bucket)
     LEFT JOIN duels d
       ON d.created_at >= g.bucket
-     AND d.created_at <  g.bucket + ${Prisma.raw(`'1 ${unit}'`)}::interval
+     AND d.created_at <  g.bucket + ${u.step}
      AND d.created_at >= ${range.from}
      AND d.created_at <  ${range.toExclusive}
     GROUP BY g.bucket
     ORDER BY g.bucket ASC
-  `;
+  `);
 }
 
 async function signupSeries(range: ResolvedRange): Promise<{ bucket: Date; count: bigint }[]> {
-  const unit = TRUNC_UNIT[range.bucket];
-  return prisma.$queryRaw<{ bucket: Date; count: bigint }[]>`
+  const u = UNIT_SQL[range.bucket];
+  return prisma.$queryRaw<{ bucket: Date; count: bigint }[]>(Prisma.sql`
     SELECT
       g.bucket                          AS bucket,
-      COALESCE(COUNT(u.id), 0)::bigint  AS count
+      COALESCE(COUNT(u2.id), 0)::bigint AS count
     FROM generate_series(
-      date_trunc(${Prisma.raw(`'${unit}'`)}, ${range.from}::timestamptz),
+      date_trunc(${u.trunc}, ${range.from}::timestamptz),
       ${range.toExclusive}::timestamptz - interval '1 microsecond',
-      ${Prisma.raw(`'1 ${unit}'`)}::interval
+      ${u.step}
     ) AS g(bucket)
-    LEFT JOIN users u
-      ON u.created_at >= g.bucket
-     AND u.created_at <  g.bucket + ${Prisma.raw(`'1 ${unit}'`)}::interval
-     AND u.created_at >= ${range.from}
-     AND u.created_at <  ${range.toExclusive}
+    LEFT JOIN users u2
+      ON u2.created_at >= g.bucket
+     AND u2.created_at <  g.bucket + ${u.step}
+     AND u2.created_at >= ${range.from}
+     AND u2.created_at <  ${range.toExclusive}
     GROUP BY g.bucket
     ORDER BY g.bucket ASC
-  `;
+  `);
 }
 
 /** Scoped totals for an arbitrary window — reused for the current range and

@@ -56,6 +56,8 @@ const FLOW_LIMIT = 40;
 const WITHDRAWAL_FEE_BPS = BigInt(process.env["NEXT_PUBLIC_WITHDRAWAL_FEE_BPS"] ?? "50");
 
 export interface TreasurySummary {
+  /** Operator capital placed in the wallet before/outside user deposits. */
+  baselineLamports: string;
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;
@@ -192,7 +194,11 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
   // already sits in the treasury. It's profit, not a wallet movement.
   const duelRake: bigint = settledDuels.reduce((sum: bigint, d) => sum + BigInt(d.feeCollectedLamports ?? 0), 0n);
 
-  const expectedBalance: bigint = depositsIn - withdrawalsOut;
+  // The baseline (operator's own funding of the wallet) is part of what the
+  // wallet should hold. Omitting it understates the expected balance by the
+  // whole opening deposit, which makes `safeToWithdraw` far too low and fires
+  // a false insolvency alarm on any platform funded before its first user.
+  const expectedBalance: bigint = TREASURY_BASELINE_LAMPORTS + depositsIn - withdrawalsOut;
   // Prisma aggregates come back nullable; coerce explicitly so the arithmetic
   // is unambiguously bigint (lamports) rather than depending on inferred types.
   const liabilities =
@@ -203,6 +209,7 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
   const safeToWithdraw = safeToWithdrawRaw > 0n ? safeToWithdrawRaw : 0n;
 
   const summary: TreasurySummary = {
+    baselineLamports: TREASURY_BASELINE_LAMPORTS.toString(),
     depositsInLamports: depositsIn.toString(),
     withdrawalsOutLamports: withdrawalsOut.toString(),
     expectedBalanceLamports: expectedBalance.toString(),
@@ -223,7 +230,8 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
   };
 
   // ── Reconciliation: books vs chain ──
-  const expectedOnChain = TREASURY_BASELINE_LAMPORTS + expectedBalance;
+  // expectedBalance already includes the baseline.
+  const expectedOnChain = expectedBalance;
   const drift = onChain.lamports === null ? null : onChain.lamports - expectedOnChain;
 
   const status: TreasuryReconciliation["status"] =
