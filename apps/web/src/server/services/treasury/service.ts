@@ -58,6 +58,9 @@ export const MAX_FLOW_PAGE_SIZE = 100;
 const WITHDRAWAL_FEE_BPS = BigInt(process.env["NEXT_PUBLIC_WITHDRAWAL_FEE_BPS"] ?? "50");
 
 export interface TreasurySummary {
+  /** Operator capital placed in the wallet before/outside user deposits.
+   *  Included in `expectedBalanceLamports`. */
+  baselineLamports: string;
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;

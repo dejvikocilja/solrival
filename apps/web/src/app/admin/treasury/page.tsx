@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/admin/EmptyState";
  */
 
 interface Summary {
+  baselineLamports: string;
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;
