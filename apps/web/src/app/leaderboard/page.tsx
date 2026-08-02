@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Trophy } from "lucide-react";
-import { getLeaderboard } from "@/server/services/leaderboard/service";
+import {
+  LEADERBOARD_LIMIT,
+  PERIOD_LABELS,
+  getLeaderboard,
+  type LeaderboardPeriod,
+} from "@/server/services/leaderboard/service";
 import { PageContainer, PageHeader } from "@/components/ui/page-shell";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -19,25 +24,68 @@ function shortWallet(addr: string): string {
   return addr.length > 8 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
 }
 
-export default async function LeaderboardPage() {
-  const entries = await getLeaderboard(50);
+const PERIODS: LeaderboardPeriod[] = ["day", "week", "all"];
+
+function isPeriod(v: string | undefined): v is LeaderboardPeriod {
+  return v === "day" || v === "week" || v === "all";
+}
+
+export default async function LeaderboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const { period: raw } = await searchParams;
+  // Unrecognised values fall back rather than 404 — a hand-edited or stale
+  // link should still render the board.
+  const period: LeaderboardPeriod = isPeriod(raw) ? raw : "week";
+  const entries = await getLeaderboard(period);
 
   return (
     <PageContainer size="wide">
       <PageHeader
         eyebrow="Compete"
         title="Leaderboard"
-        description="The top players, ranked by total duels won. Win more to climb."
+        description={`The top ${LEADERBOARD_LIMIT} players, ranked by duels won. Win more to climb.`}
       />
+
+      {/* Period switcher. Plain links, so this stays a server component and
+          each view is shareable and cacheable on its own URL. */}
+      <div
+        className="mb-5 inline-flex rounded-lg border border-border bg-surface-2 p-1"
+        role="tablist"
+        aria-label="Leaderboard period"
+      >
+        {PERIODS.map((p) => (
+          <Link
+            key={p}
+            href={`/leaderboard?period=${p}`}
+            role="tab"
+            aria-selected={p === period}
+            className={cn(
+              "rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors",
+              p === period
+                ? "bg-rival/15 text-rival"
+                : "text-muted hover:text-fg",
+            )}
+          >
+            {PERIOD_LABELS[p]}
+          </Link>
+        ))}
+      </div>
 
       {entries.length === 0 ? (
         <div className="flex flex-col items-center rounded-xl border border-dashed border-border bg-surface-2/40 px-6 py-16 text-center">
           <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-surface-2 text-muted">
             <Trophy className="h-5 w-5" aria-hidden />
           </span>
-          <h2 className="text-heading-3 text-fg">No ranked players yet</h2>
+          <h2 className="text-heading-3 text-fg">
+            {period === "all" ? "No ranked players yet" : "No duels settled yet"}
+          </h2>
           <p className="mt-1 max-w-sm text-body-sm text-muted">
-            The board fills up as duels are settled. Win one and you&rsquo;ll be the first name here.
+            {period === "all"
+              ? "The board fills up as duels are settled. Win one and you\u2019ll be the first name here."
+              : `No duels have been settled ${period === "day" ? "today" : "this week"} yet. Win one and you\u2019ll be the first name here.`}
           </p>
           <Link
             href="/arena"

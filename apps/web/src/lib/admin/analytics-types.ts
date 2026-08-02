@@ -28,13 +28,6 @@ export interface AnalyticsSnapshot {
   activeDuels: number;
   /** Lifetime figures, always shown alongside the scoped ones. */
   lifetime: { duels: number; volumeSol: number; feesSol: number };
-  /** Percentage change vs the immediately preceding window of equal length.
-   *  null when there is no prior data to compare against. */
-  deltas: {
-    duels: number | null;
-    volumeSol: number | null;
-    activePlayers: number | null;
-  };
   duelsPerDay: SeriesPoint[];
   volumePerDay: VolumePoint[];
   playersPerDay: SeriesPoint[];

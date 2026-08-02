@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@solrival/db";
+import { Prisma, prisma } from "@solrival/db";
 import { solanaConnection, treasuryWallet } from "../../solana/config";
 
 /**
@@ -49,15 +49,15 @@ const TREASURY_BASELINE_LAMPORTS = BigInt(
  */
 const RECONCILE_TOLERANCE_LAMPORTS = 10_000_000n; // 0.01 SOL
 
-/** Most recent treasury movements shown in the ledger table. */
-const FLOW_LIMIT = 40;
+/** Ledger page size. The movement log grows without bound, so it is paged in
+ *  SQL — never assembled in memory and sliced. */
+export const FLOW_PAGE_SIZE = 20;
+export const MAX_FLOW_PAGE_SIZE = 100;
 
 /** Withdrawal fee rate, used only to reconstruct fees for legacy rows (see below). */
 const WITHDRAWAL_FEE_BPS = BigInt(process.env["NEXT_PUBLIC_WITHDRAWAL_FEE_BPS"] ?? "50");
 
 export interface TreasurySummary {
-  /** Operator capital placed in the wallet before/outside user deposits. */
-  baselineLamports: string;
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;
@@ -112,10 +112,30 @@ export interface TreasuryFlow {
   at: string;
 }
 
+export type FlowKind = "DEPOSIT" | "WITHDRAWAL" | "DUEL_RAKE";
+
+export interface TreasuryFlowQuery {
+  page: number;
+  pageSize: number;
+  /** Empty/undefined means all kinds. */
+  kind?: FlowKind | "ALL";
+  /** ISO yyyy-mm-dd bounds, inclusive. */
+  from?: string;
+  to?: string;
+}
+
+export interface TreasuryFlowPage {
+  rows: TreasuryFlow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface TreasuryReport {
   summary: TreasurySummary;
   reconciliation: TreasuryReconciliation;
-  flows: TreasuryFlow[];
+  flows: TreasuryFlowPage;
 }
 
 /** Reads the treasury's real balance. Never throws: an RPC outage must degrade
@@ -129,78 +149,139 @@ async function readOnChainBalance(): Promise<{ lamports: bigint | null; error: s
   }
 }
 
-export async function getTreasuryReport(): Promise<TreasuryReport> {
-  const [deposits, withdrawals, settledDuels, balances, onChain] = await Promise.all([
-    prisma.deposit.findMany({
-      where: { status: "CREDITED" },
-      select: {
-        id: true,
-        grossLamports: true,
-        feeLamports: true,
-        txSignature: true,
-        createdAt: true,
-        user: { select: { username: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.withdrawalRequest.findMany({
-      where: { status: "COMPLETED" },
-      select: {
-        id: true,
-        amountLamports: true,
-        feeLamports: true,
-        txSignature: true,
-        completedAt: true,
-        createdAt: true,
-        user: { select: { username: true } },
-      },
-      orderBy: { completedAt: "desc" },
-    }),
-    prisma.duel.findMany({
-      where: { status: "COMPLETED", feeCollectedLamports: { not: null } },
-      select: { id: true, feeCollectedLamports: true, settledAt: true },
-      orderBy: { settledAt: "desc" },
-    }),
+export async function getTreasuryReport(
+  flowQuery: Partial<TreasuryFlowQuery> = {},
+): Promise<TreasuryReport> {
+  const page = Math.max(1, Math.trunc(flowQuery.page ?? 1));
+  const pageSize = Math.min(
+    MAX_FLOW_PAGE_SIZE,
+    Math.max(1, Math.trunc(flowQuery.pageSize ?? FLOW_PAGE_SIZE)),
+  );
+  const kind = flowQuery.kind && flowQuery.kind !== "ALL" ? flowQuery.kind : null;
+  const fromDate = flowQuery.from ? new Date(`${flowQuery.from}T00:00:00.000Z`) : null;
+  const toDate = flowQuery.to ? new Date(`${flowQuery.to}T23:59:59.999Z`) : null;
+  const validFrom = fromDate && !Number.isNaN(fromDate.getTime()) ? fromDate : null;
+  const validTo = toDate && !Number.isNaN(toDate.getTime()) ? toDate : null;
+
+  const [totals, balances, onChain, flowRows] = await Promise.all([
+    // Every aggregate in one round trip. Previously each of these was a
+    // findMany that pulled the entire table into Node just to sum it — fine at
+    // 17 duels, fatal at scale.
+    prisma.$queryRaw<
+      [
+        {
+          deposits_in: bigint;
+          deposit_fees: bigint;
+          deposit_count: bigint;
+          withdrawals_out: bigint;
+          withdrawal_fees: bigint;
+          withdrawal_count: bigint;
+          duel_rake: bigint;
+          duel_count: bigint;
+        },
+      ]
+    >(Prisma.sql`
+      SELECT
+        COALESCE((SELECT SUM(gross_lamports) FROM deposits WHERE status = 'CREDITED'), 0)::bigint AS deposits_in,
+        COALESCE((SELECT SUM(fee_lamports)   FROM deposits WHERE status = 'CREDITED'), 0)::bigint AS deposit_fees,
+        (SELECT COUNT(*) FROM deposits WHERE status = 'CREDITED')::bigint                         AS deposit_count,
+        COALESCE((
+          SELECT SUM(amount_lamports - COALESCE(fee_lamports, (amount_lamports * ${WITHDRAWAL_FEE_BPS}) / 10000))
+          FROM withdrawal_requests WHERE status = 'COMPLETED'
+        ), 0)::bigint                                                                             AS withdrawals_out,
+        COALESCE((
+          SELECT SUM(COALESCE(fee_lamports, (amount_lamports * ${WITHDRAWAL_FEE_BPS}) / 10000))
+          FROM withdrawal_requests WHERE status = 'COMPLETED'
+        ), 0)::bigint                                                                             AS withdrawal_fees,
+        (SELECT COUNT(*) FROM withdrawal_requests WHERE status = 'COMPLETED')::bigint             AS withdrawal_count,
+        COALESCE((SELECT SUM(fee_collected_lamports) FROM duels
+                  WHERE status = 'COMPLETED' AND fee_collected_lamports IS NOT NULL), 0)::bigint  AS duel_rake,
+        (SELECT COUNT(*) FROM duels
+         WHERE status = 'COMPLETED' AND fee_collected_lamports IS NOT NULL)::bigint               AS duel_count
+    `),
     prisma.userBalance.aggregate({
       _sum: { availableLamports: true, lockedLamports: true },
     }),
     readOnChainBalance(),
+    // Paged movement ledger. COUNT(*) OVER() gives the unfiltered-by-page total
+    // in the same scan, so the pager knows how many pages exist without a
+    // second query.
+    prisma.$queryRaw<
+      {
+        id: string;
+        kind: FlowKind;
+        delta_lamports: bigint;
+        fee_lamports: bigint;
+        username: string | null;
+        tx_signature: string | null;
+        at: Date;
+        total: bigint;
+      }[]
+    >(Prisma.sql`
+      WITH movements AS (
+        SELECT
+          'dep_' || d.id::text                       AS id,
+          'DEPOSIT'                                  AS kind,
+          d.gross_lamports                           AS delta_lamports,
+          d.fee_lamports                             AS fee_lamports,
+          u.username                                 AS username,
+          d.tx_signature                             AS tx_signature,
+          d.created_at                               AS at
+        FROM deposits d
+        JOIN users u ON u.id = d.user_id
+        WHERE d.status = 'CREDITED'
+
+        UNION ALL
+
+        SELECT
+          'wd_' || w.id::text,
+          'WITHDRAWAL',
+          -(w.amount_lamports - COALESCE(w.fee_lamports, (w.amount_lamports * ${WITHDRAWAL_FEE_BPS}) / 10000)),
+          COALESCE(w.fee_lamports, (w.amount_lamports * ${WITHDRAWAL_FEE_BPS}) / 10000),
+          u.username,
+          w.tx_signature,
+          COALESCE(w.completed_at, w.created_at)
+        FROM withdrawal_requests w
+        JOIN users u ON u.id = w.user_id
+        WHERE w.status = 'COMPLETED'
+
+        UNION ALL
+
+        SELECT
+          'duel_' || dl.id::text,
+          'DUEL_RAKE',
+          0::bigint,
+          dl.fee_collected_lamports,
+          NULL,
+          NULL,
+          COALESCE(dl.settled_at, dl.created_at)
+        FROM duels dl
+        WHERE dl.status = 'COMPLETED' AND dl.fee_collected_lamports IS NOT NULL
+      )
+      SELECT m.*, COUNT(*) OVER()::bigint AS total
+      FROM movements m
+      WHERE (${kind}::text IS NULL OR m.kind = ${kind}::text)
+        AND (${validFrom}::timestamptz IS NULL OR m.at >= ${validFrom}::timestamptz)
+        AND (${validTo}::timestamptz   IS NULL OR m.at <= ${validTo}::timestamptz)
+      ORDER BY m.at DESC
+      LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+    `),
   ]);
 
-  // ── Money in / out of the wallet ──
-  // Deposits: the FULL gross amount lands in the treasury (the fee is simply
-  // not credited to the user, so it stays with us — no separate transfer).
-  const depositsIn: bigint = deposits.reduce((sum: bigint, d) => sum + BigInt(d.grossLamports), 0n);
-  const depositFees: bigint = deposits.reduce((sum: bigint, d) => sum + BigInt(d.feeLamports), 0n);
-
-  // Withdrawals: the user is debited the gross amount, but only the NET leaves
-  // the wallet on-chain (the fee stays behind). `feeLamports` is recorded at
-  // payout; older rows predate that column, so reconstruct at the current rate.
-  const withdrawalFee = (w: { amountLamports: bigint; feeLamports: bigint | null }): bigint =>
-    w.feeLamports !== null
-      ? BigInt(w.feeLamports)
-      : (BigInt(w.amountLamports) * WITHDRAWAL_FEE_BPS) / 10_000n;
-
-  const withdrawalFees: bigint = withdrawals.reduce(
-    (sum: bigint, w) => sum + withdrawalFee(w),
-    0n,
-  );
-  const withdrawalsOut: bigint = withdrawals.reduce(
-    (sum: bigint, w) => sum + (BigInt(w.amountLamports) - withdrawalFee(w)),
-    0n,
-  );
-
+  const t = totals[0];
+  const depositsIn = t.deposits_in;
+  const depositFees = t.deposit_fees;
+  const withdrawalsOut = t.withdrawals_out;
+  const withdrawalFees = t.withdrawal_fees;
   // Duel rake moves no SOL: it's an internal ledger cut of a credit pot that
   // already sits in the treasury. It's profit, not a wallet movement.
-  const duelRake: bigint = settledDuels.reduce((sum: bigint, d) => sum + BigInt(d.feeCollectedLamports ?? 0), 0n);
+  const duelRake = t.duel_rake;
 
   // The baseline (operator's own funding of the wallet) is part of what the
   // wallet should hold. Omitting it understates the expected balance by the
   // whole opening deposit, which makes `safeToWithdraw` far too low and fires
   // a false insolvency alarm on any platform funded before its first user.
   const expectedBalance: bigint = TREASURY_BASELINE_LAMPORTS + depositsIn - withdrawalsOut;
-  // Prisma aggregates come back nullable; coerce explicitly so the arithmetic
-  // is unambiguously bigint (lamports) rather than depending on inferred types.
   const liabilities =
     BigInt(balances._sum.availableLamports ?? 0) + BigInt(balances._sum.lockedLamports ?? 0);
 
@@ -220,17 +301,15 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
     userLiabilitiesLamports: liabilities.toString(),
     safeToWithdrawLamports: safeToWithdraw.toString(),
     safetyBufferLamports: SAFETY_BUFFER_LAMPORTS.toString(),
-    // Books say the wallet holds less than users are owed — never withdraw.
     insolvent: expectedBalance < liabilities,
     counts: {
-      deposits: deposits.length,
-      withdrawals: withdrawals.length,
-      settledDuels: settledDuels.length,
+      deposits: Number(t.deposit_count),
+      withdrawals: Number(t.withdrawal_count),
+      settledDuels: Number(t.duel_count),
     },
   };
 
   // ── Reconciliation: books vs chain ──
-  // expectedBalance already includes the baseline.
   const expectedOnChain = expectedBalance;
   const drift = onChain.lamports === null ? null : onChain.lamports - expectedOnChain;
 
@@ -250,49 +329,28 @@ export async function getTreasuryReport(): Promise<TreasuryReport> {
     baselineLamports: TREASURY_BASELINE_LAMPORTS.toString(),
     toleranceLamports: RECONCILE_TOLERANCE_LAMPORTS.toString(),
     status,
-    // The solvency question that actually matters: can the real wallet cover
-    // every lamport users could ask for right now?
     onChainInsolvent: onChain.lamports === null ? null : onChain.lamports < liabilities,
     checkedAt: new Date().toISOString(),
     error: onChain.error,
     treasuryWallet: treasuryWallet.toBase58(),
   };
 
-  // ── Unified movement ledger, newest first ──
-  const flows: TreasuryFlow[] = [
-    ...deposits.map((d) => ({
-      id: `dep_${d.id}`,
-      kind: "DEPOSIT" as const,
-      deltaLamports: BigInt(d.grossLamports).toString(),
-      feeLamports: BigInt(d.feeLamports).toString(),
-      username: d.user.username,
-      txSignature: d.txSignature,
-      at: d.createdAt.toISOString(),
+  const total = flowRows.length > 0 ? Number(flowRows[0]!.total) : 0;
+  const flows: TreasuryFlowPage = {
+    rows: flowRows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      deltaLamports: r.delta_lamports.toString(),
+      feeLamports: r.fee_lamports.toString(),
+      username: r.username,
+      txSignature: r.tx_signature,
+      at: r.at.toISOString(),
     })),
-    ...withdrawals.map((w) => {
-      const fee = withdrawalFee(w);
-      return {
-        id: `wd_${w.id}`,
-        kind: "WITHDRAWAL" as const,
-        deltaLamports: (-(BigInt(w.amountLamports) - fee)).toString(), // only the net leaves
-        feeLamports: fee.toString(),
-        username: w.user.username,
-        txSignature: w.txSignature,
-        at: (w.completedAt ?? w.createdAt).toISOString(),
-      };
-    }),
-    ...settledDuels.map((d) => ({
-      id: `duel_${d.id}`,
-      kind: "DUEL_RAKE" as const,
-      deltaLamports: "0", // internal ledger cut; no SOL moves
-      feeLamports: BigInt(d.feeCollectedLamports ?? 0).toString(),
-      username: null,
-      txSignature: null,
-      at: (d.settledAt ?? new Date(0)).toISOString(),
-    })),
-  ]
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, FLOW_LIMIT);
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 
   return { summary, reconciliation, flows };
 }

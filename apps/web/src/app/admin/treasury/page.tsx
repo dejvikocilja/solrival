@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   Wallet, TrendingUp, Landmark, ShieldAlert, ArrowDownLeft, ArrowUpRight, Swords,
-  RefreshCw,
+  RefreshCw, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReconciliationPanel, type Reconciliation } from "@/components/admin/ReconciliationPanel";
@@ -24,7 +25,6 @@ interface Summary {
   depositsInLamports: string;
   withdrawalsOutLamports: string;
   expectedBalanceLamports: string;
-  baselineLamports: string;
   depositFeesLamports: string;
   withdrawalFeesLamports: string;
   duelRakeLamports: string;
@@ -66,26 +66,44 @@ export default function AdminTreasuryPage() {
   // Polled rather than fetched once: the treasury is the page an operator
   // leaves open while payouts run, and a frozen balance there is misleading in
   // exactly the moments it matters.
+  const [page, setPage] = useState(1);
+  const [kind, setKind] = useState<"ALL" | "DEPOSIT" | "WITHDRAWAL" | "DUEL_RAKE">("ALL");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const params = new URLSearchParams({ page: String(page), kind });
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+
   const query = useQuery({
-    queryKey: ["admin-treasury"],
+    queryKey: ["admin-treasury", params.toString()],
     queryFn: async () => {
-      const res = await fetch("/api/admin/treasury", { credentials: "same-origin" });
+      const res = await fetch(`/api/admin/treasury?${params.toString()}`, { credentials: "same-origin" });
       if (!res.ok) throw new Error("Failed to load treasury");
       // `ok()` serializes the payload directly — there is no `data` envelope.
       return (await res.json()) as {
         summary: Summary;
         reconciliation: Reconciliation;
-        flows: Flow[];
+        flows: {
+          rows: Flow[];
+          total: number;
+          page: number;
+          pageSize: number;
+          totalPages: number;
+        };
       };
     },
     refetchInterval: 20_000,
     refetchOnWindowFocus: true,
-    placeholderData: (prev) => prev,
+    // Keeps the current page visible while the next one loads, so paging and
+    // the 20s poll never blank the table.
+    placeholderData: keepPreviousData,
   });
 
   const summary = query.data?.summary ?? null;
   const reconciliation = query.data?.reconciliation ?? null;
-  const flows = query.data?.flows ?? [];
+  const flowPage = query.data?.flows;
+  const flows = flowPage?.rows ?? [];
   const loading = query.isLoading;
   const error = query.isError ? "Failed to load treasury" : null;
 
@@ -168,7 +186,7 @@ export default function AdminTreasuryPage() {
           aria-label="Refresh treasury"
         >
           <RefreshCw className={query.isFetching ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-          {query.isFetching ? "Refreshing" : "Refresh"}
+          Refresh
         </Button>
       </div>
 
@@ -241,13 +259,121 @@ export default function AdminTreasuryPage() {
         </p>
       </div>
 
-      {/* Flow ledger */}
+      {/* Flow ledger — paged and filtered in SQL. The movement log grows
+          without bound, so it is never fetched whole. */}
       <div>
-        <h2 className="mb-3 font-display text-heading-3 text-fg">Treasury ledger</h2>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-display text-heading-3 text-fg">Treasury ledger</h2>
+            {flowPage ? (
+              <p className="mt-0.5 text-caption text-faint">
+                {flowPage.total.toLocaleString()} movement{flowPage.total === 1 ? "" : "s"} · showing{" "}
+                {flows.length} per page
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-caption uppercase tracking-wide text-faint">Type</span>
+              <select
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value as typeof kind);
+                  setPage(1);
+                }}
+                className="h-8 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-fg focus-visible:focus-ring"
+              >
+                <option value="ALL">All types</option>
+                <option value="DEPOSIT">Deposits</option>
+                <option value="WITHDRAWAL">Withdrawals</option>
+                <option value="DUEL_RAKE">Duel rake</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-caption uppercase tracking-wide text-faint">From</span>
+              <input
+                type="date"
+                value={from}
+                max={to || undefined}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="h-8 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-fg [color-scheme:dark] focus-visible:focus-ring"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-caption uppercase tracking-wide text-faint">To</span>
+              <input
+                type="date"
+                value={to}
+                min={from || undefined}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setPage(1);
+                }}
+                className="h-8 rounded-md border border-border bg-surface-2 px-2 text-[13px] text-fg [color-scheme:dark] focus-visible:focus-ring"
+              />
+            </label>
+            {(kind !== "ALL" || from || to) ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setKind("ALL");
+                  setFrom("");
+                  setTo("");
+                  setPage(1);
+                }}
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
         {flows.length === 0 ? (
-          <EmptyState title="No treasury activity yet" description="Deposits, withdrawals and duel rake will appear here." />
+          <EmptyState
+            title={kind !== "ALL" || from || to ? "No movements match these filters" : "No treasury activity yet"}
+            description={
+              kind !== "ALL" || from || to
+                ? "Try widening the date range or clearing the type filter."
+                : "Deposits, withdrawals and duel rake will appear here."
+            }
+          />
         ) : (
-          <DataTable columns={columns} rows={flows} rowKey={(f) => f.id} />
+          <>
+            <DataTable columns={columns} rows={flows} rowKey={(f) => f.id} />
+
+            {flowPage && flowPage.totalPages > 1 ? (
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-caption text-faint">
+                  Page {flowPage.page} of {flowPage.totalPages}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((n) => Math.max(1, n - 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={page >= flowPage.totalPages}
+                    onClick={() => setPage((n) => n + 1)}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>

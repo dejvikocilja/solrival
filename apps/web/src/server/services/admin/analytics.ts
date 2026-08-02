@@ -88,29 +88,9 @@ function lamportsToSol(l: bigint): number {
   return Number((l * 10_000n) / LAMPORTS_PER_SOL) / 10_000;
 }
 
-/** Percent change, guarding the divide-by-zero that makes "∞%" appear in a UI. */
-function pctChange(current: number, previous: number): number | null {
-  if (previous <= 0) return null;
-  return ((current - previous) / previous) * 100;
-}
-
-/**
- * Pre-built SQL fragments per bucket.
- *
- * These are literal `Prisma.sql` fragments from a closed set — nothing derived
- * from user input is ever interpolated into SQL text, so injection is
- * structurally impossible rather than merely guarded against.
- *
- * They must be embedded via the FUNCTION form `prisma.$queryRaw(Prisma.sql\`…\`)`.
- * In the tagged-template form (`prisma.$queryRaw\`…\``) every `${}` is bound as
- * a query parameter, including SQL fragments — Prisma serialises the fragment
- * object to JSON, and Postgres then rejects `date_trunc(jsonb, timestamptz)`.
- */
-const UNIT_SQL: Record<Bucket, { trunc: Prisma.Sql; step: Prisma.Sql }> = {
-  day: { trunc: Prisma.sql`'day'`, step: Prisma.sql`interval '1 day'` },
-  week: { trunc: Prisma.sql`'week'`, step: Prisma.sql`interval '1 week'` },
-  month: { trunc: Prisma.sql`'month'`, step: Prisma.sql`interval '1 month'` },
-};
+/** Maps a bucket to the Postgres date_trunc unit. Never interpolated from user
+ *  input — only from this closed set — so it cannot carry SQL injection. */
+const TRUNC_UNIT: Record<Bucket, string> = { day: "day", week: "week", month: "month" };
 
 type BucketRow = { bucket: Date; count: bigint; lamports: bigint };
 
@@ -120,50 +100,49 @@ type BucketRow = { bucket: Date; count: bigint; lamports: bigint };
  * rather than the chart silently closing over missing days.
  */
 async function duelSeries(range: ResolvedRange): Promise<BucketRow[]> {
-  const u = UNIT_SQL[range.bucket];
-  return prisma.$queryRaw<BucketRow[]>(Prisma.sql`
+  const unit = TRUNC_UNIT[range.bucket];
+  return prisma.$queryRaw<BucketRow[]>`
     SELECT
-      g.bucket                                       AS bucket,
-      COALESCE(COUNT(d.id), 0)::bigint               AS count,
-      COALESCE(SUM(d.stake_lamports * 2), 0)::bigint AS lamports
+      g.bucket                                                   AS bucket,
+      COALESCE(COUNT(d.id), 0)::bigint                           AS count,
+      COALESCE(SUM(d.stake_lamports * 2), 0)::bigint             AS lamports
     FROM generate_series(
-      date_trunc(${u.trunc}, ${range.from}::timestamptz),
+      date_trunc(${Prisma.raw(`'${unit}'`)}, ${range.from}::timestamptz),
       ${range.toExclusive}::timestamptz - interval '1 microsecond',
-      ${u.step}
+      ${Prisma.raw(`'1 ${unit}'`)}::interval
     ) AS g(bucket)
     LEFT JOIN duels d
       ON d.created_at >= g.bucket
-     AND d.created_at <  g.bucket + ${u.step}
+     AND d.created_at <  g.bucket + ${Prisma.raw(`'1 ${unit}'`)}::interval
      AND d.created_at >= ${range.from}
      AND d.created_at <  ${range.toExclusive}
     GROUP BY g.bucket
     ORDER BY g.bucket ASC
-  `);
+  `;
 }
 
 async function signupSeries(range: ResolvedRange): Promise<{ bucket: Date; count: bigint }[]> {
-  const u = UNIT_SQL[range.bucket];
-  return prisma.$queryRaw<{ bucket: Date; count: bigint }[]>(Prisma.sql`
+  const unit = TRUNC_UNIT[range.bucket];
+  return prisma.$queryRaw<{ bucket: Date; count: bigint }[]>`
     SELECT
       g.bucket                          AS bucket,
-      COALESCE(COUNT(u2.id), 0)::bigint AS count
+      COALESCE(COUNT(u.id), 0)::bigint  AS count
     FROM generate_series(
-      date_trunc(${u.trunc}, ${range.from}::timestamptz),
+      date_trunc(${Prisma.raw(`'${unit}'`)}, ${range.from}::timestamptz),
       ${range.toExclusive}::timestamptz - interval '1 microsecond',
-      ${u.step}
+      ${Prisma.raw(`'1 ${unit}'`)}::interval
     ) AS g(bucket)
-    LEFT JOIN users u2
-      ON u2.created_at >= g.bucket
-     AND u2.created_at <  g.bucket + ${u.step}
-     AND u2.created_at >= ${range.from}
-     AND u2.created_at <  ${range.toExclusive}
+    LEFT JOIN users u
+      ON u.created_at >= g.bucket
+     AND u.created_at <  g.bucket + ${Prisma.raw(`'1 ${unit}'`)}::interval
+     AND u.created_at >= ${range.from}
+     AND u.created_at <  ${range.toExclusive}
     GROUP BY g.bucket
     ORDER BY g.bucket ASC
-  `);
+  `;
 }
 
-/** Scoped totals for an arbitrary window — reused for the current range and
- *  for the preceding window that produces the trend deltas. */
+/** Scoped totals for the selected window. */
 async function windowTotals(from: Date, toExclusive: Date) {
   const [totals, players] = await Promise.all([
     prisma.$queryRaw<[{ duels: bigint; volume: bigint; fees: bigint }]>`
@@ -207,13 +186,8 @@ export async function getAnalyticsSnapshot(
 ): Promise<AnalyticsSnapshot> {
   const range = await resolveRange(sel);
 
-  // The equal-length window immediately before this one, for trend deltas.
-  const priorSpanMs = range.toExclusive.getTime() - range.from.getTime();
-  const priorFrom = new Date(range.from.getTime() - priorSpanMs);
-
   const [
     current,
-    prior,
     lifetime,
     activeDuels,
     tournaments,
@@ -222,7 +196,6 @@ export async function getAnalyticsSnapshot(
     splitRows,
   ] = await Promise.all([
     windowTotals(range.from, range.toExclusive),
-    windowTotals(priorFrom, range.from),
     prisma.$queryRaw<[{ duels: bigint; volume: bigint; fees: bigint }]>`
       SELECT
         COUNT(*)::bigint                                                                     AS duels,
@@ -265,14 +238,6 @@ export async function getAnalyticsSnapshot(
       duels: Number(lifetime[0]?.duels ?? 0n),
       volumeSol: lamportsToSol(lifetime[0]?.volume ?? 0n),
       feesSol: lamportsToSol(lifetime[0]?.fees ?? 0n),
-    },
-    deltas: {
-      duels: pctChange(current.duels, prior.duels),
-      volumeSol: pctChange(
-        lamportsToSol(current.volumeLamports),
-        lamportsToSol(prior.volumeLamports),
-      ),
-      activePlayers: pctChange(current.activePlayers, prior.activePlayers),
     },
     duelsPerDay: duelRows.map((r) => ({ date: bucketKey(r.bucket), count: Number(r.count) })),
     volumePerDay: duelRows.map((r) => ({ date: bucketKey(r.bucket), sol: lamportsToSol(r.lamports) })),

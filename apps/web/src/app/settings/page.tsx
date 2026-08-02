@@ -9,7 +9,7 @@ import { Field, TextInput, FieldError } from "@/components/ui/field";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { GameAccountsCard } from "@/components/settings/game-accounts-card";
 import { useAuth } from "@/hooks/use-auth";
-import { apiPatch, ApiError } from "@/lib/api/client";
+import { apiGet, apiPatch, ApiError } from "@/lib/api/client";
 import type { SessionUser } from "@solrival/shared";
 import { cn } from "@/lib/utils";
 
@@ -48,17 +48,43 @@ export default function SettingsPage() {
   );
 }
 
+interface UsernameChangeState {
+  canChange: boolean;
+  availableAt: string | null;
+  daysRemaining: number;
+  cooldownDays: number;
+}
+
 function UsernameCard({ user, onSaved }: { user: SessionUser; onSaved: () => Promise<void> }) {
   const [value, setValue] = React.useState(user.username);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
+  const [cooldown, setCooldown] = React.useState<UsernameChangeState | null>(null);
+
+  // Eligibility comes from the server, so the field can be locked before the
+  // user invests effort in a new name only to be refused on submit.
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await apiGet<{ usernameChange: UsernameChangeState }>("/api/users/me");
+        if (!cancelled) setCooldown(res.usernameChange);
+      } catch {
+        // Non-fatal: the server still enforces the rule on PATCH.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [saved]);
 
   const trimmed = value.trim();
   const formatValid = USERNAME_RE.test(trimmed);
   const changed = trimmed !== user.username;
   const showFormatError = trimmed.length > 0 && !formatValid;
-  const canSave = formatValid && changed && !saving;
+  const locked = cooldown !== null && !cooldown.canChange;
+  const canSave = formatValid && changed && !saving && !locked;
 
   async function save() {
     if (!canSave) return;
@@ -82,7 +108,12 @@ function UsernameCard({ user, onSaved }: { user: SessionUser; onSaved: () => Pro
     <Card>
       <CardHeader>
         <h2 className="font-display text-heading-3 text-fg">Username</h2>
-        <p className="mt-1 text-body-sm text-muted">This is the name rivals see on the arena and leaderboard.</p>
+        <p className="mt-1 text-body-sm text-muted">
+          This is the name rivals see on the arena and leaderboard.
+          {cooldown
+            ? ` It can be changed once every ${cooldown.cooldownDays} days.`
+            : ""}
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         <Field label="Username" hint={`${trimmed.length}/20`}>
@@ -101,9 +132,24 @@ function UsernameCard({ user, onSaved }: { user: SessionUser; onSaved: () => Pro
             autoComplete="off"
             spellCheck={false}
             placeholder="your_handle"
+            disabled={locked}
           />
           <FieldError>{errorText}</FieldError>
         </Field>
+
+        {locked && cooldown ? (
+          <p className="rounded-lg border border-border bg-surface-2 px-3 py-2 text-body-sm text-muted">
+            You can change your username again in{" "}
+            <span className="text-fg">
+              {cooldown.daysRemaining} {cooldown.daysRemaining === 1 ? "day" : "days"}
+            </span>
+            {cooldown.availableAt
+              ? ` (${new Date(cooldown.availableAt).toLocaleDateString(undefined, {
+                  dateStyle: "medium",
+                })}).`
+              : "."}
+          </p>
+        ) : null}
 
         <div className="flex items-center gap-3">
           <Button onClick={() => void save()} disabled={!canSave} loading={saving}>

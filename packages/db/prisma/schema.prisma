@@ -239,6 +239,10 @@ model User {
   /// otherwise both be creatable — an impersonation vector. This column is the
   /// real uniqueness guarantee; `username` preserves the user's chosen casing.
   usernameLower  String         @unique @map("username_lower")
+  /// When the username was last changed. Null for accounts that still carry
+  /// their original auto-assigned name, which may be changed freely once.
+  /// Enforces the change cooldown — see server/services/user/username.ts.
+  usernameChangedAt DateTime?    @map("username_changed_at") @db.Timestamptz(6)
   role           UserRole       @default(PLAYER)
 
   // denormalized platform record (source of truth = duel results; updated in tx)

@@ -28,26 +28,6 @@ const POLL_INTERVAL_MS = 15_000;
 
 const GAME_COLORS = ["hsl(var(--cr))", "hsl(var(--bs))", "hsl(var(--rival))", "hsl(var(--ember))"];
 
-function formatDelta(pct: number | null): { label: string; positive: boolean } | null {
-  if (pct === null || !Number.isFinite(pct)) return null;
-  const rounded = Math.round(pct);
-  if (rounded === 0) return { label: "No change", positive: true };
-  return { label: `${rounded > 0 ? "+" : ""}${rounded}% vs prior period`, positive: rounded > 0 };
-}
-
-/** "12s ago" — a quiet proof the numbers are live rather than a stale render. */
-function useAgo(since: number | undefined): string {
-  const [, force] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1_000);
-    return () => clearInterval(t);
-  }, []);
-  if (!since) return "";
-  const secs = Math.max(0, Math.round((Date.now() - since) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  return `${Math.floor(secs / 60)}m ago`;
-}
-
 export function AnalyticsDashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -81,7 +61,6 @@ export function AnalyticsDashboard() {
   });
 
   const data = query.data?.data;
-  const ago = useAgo(query.dataUpdatedAt);
   const label = rangeLabel(range);
   const bucketNote =
     data?.range.bucket === "week" ? "weekly buckets" : data?.range.bucket === "month" ? "monthly buckets" : "daily";
@@ -92,21 +71,12 @@ export function AnalyticsDashboard() {
     color: GAME_COLORS[i % GAME_COLORS.length]!,
   }));
 
-  const duelsDelta = formatDelta(data?.deltas.duels ?? null);
-  const volumeDelta = formatDelta(data?.deltas.volumeSol ?? null);
-  const playersDelta = formatDelta(data?.deltas.activePlayers ?? null);
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="font-display text-heading-1 text-fg">Overview</h1>
-          <p className="mt-1 text-body-sm text-muted">
-            Platform-wide metrics and activity.{" "}
-            <span className="text-faint">
-              {query.isFetching ? "Refreshing…" : ago ? `Updated ${ago}` : ""}
-            </span>
-          </p>
+          <p className="mt-1 text-body-sm text-muted">Platform-wide metrics and activity.</p>
         </div>
         <Button
           variant="ghost"
@@ -142,8 +112,6 @@ export function AnalyticsDashboard() {
           label="Duels"
           value={data ? data.duels.toLocaleString() : "—"}
           sublabel={label}
-          delta={duelsDelta?.label}
-          deltaPositive={duelsDelta?.positive}
           icon={<Swords className="h-4 w-4" />}
         />
         <StatCard
@@ -151,16 +119,12 @@ export function AnalyticsDashboard() {
           value={data ? data.activeDuels.toLocaleString() : "—"}
           sublabel="live"
           accent={data && data.activeDuels > 0 ? "rival" : "neutral"}
-          delta={data && data.activeDuels > 0 ? "Live" : undefined}
-          deltaPositive={Boolean(data && data.activeDuels > 0)}
           icon={<Activity className="h-4 w-4" />}
         />
         <StatCard
           label="Volume"
           value={data ? `◎${data.volumeSol.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "—"}
           sublabel={data ? `◎${data.lifetime.volumeSol.toLocaleString(undefined, { maximumFractionDigits: 2 })} all time` : label}
-          delta={volumeDelta?.label}
-          deltaPositive={volumeDelta?.positive}
           accent="victory"
           icon={<TrendingUp className="h-4 w-4" />}
         />
@@ -181,8 +145,6 @@ export function AnalyticsDashboard() {
           label="Active players"
           value={data ? data.activePlayers.toLocaleString() : "—"}
           sublabel={label}
-          delta={playersDelta?.label}
-          deltaPositive={playersDelta?.positive}
           icon={<Users className="h-4 w-4" />}
         />
       </div>
