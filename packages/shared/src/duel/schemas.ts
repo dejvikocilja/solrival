@@ -20,6 +20,10 @@ export const ruleTemplateSchema = z.enum([
   "BS_KNOCKOUT",
   "BS_BRAWL_BALL",
   "BS_GEM_GRAB",
+  "BS_HEIST",
+  "BS_BOUNTY",
+  "BS_HOT_ZONE",
+  "BS_DUELS",
 ]);
 export type RuleTemplate = z.infer<typeof ruleTemplateSchema>;
 
@@ -29,7 +33,15 @@ export type DuelVisibility = z.infer<typeof duelVisibilitySchema>;
 /** Which rule templates belong to which game (enforced on create). */
 export const RULES_BY_GAME: Record<Game, RuleTemplate[]> = {
   CLASH_ROYALE: ["CR_TRIPLE_DRAFT", "CR_DRAFT", "CR_CLASSIC_DECK", "CR_SUDDEN_DEATH"],
-  BRAWL_STARS: ["BS_KNOCKOUT", "BS_BRAWL_BALL", "BS_GEM_GRAB"],
+  BRAWL_STARS: [
+    "BS_KNOCKOUT",
+    "BS_BRAWL_BALL",
+    "BS_GEM_GRAB",
+    "BS_HEIST",
+    "BS_BOUNTY",
+    "BS_HOT_ZONE",
+    "BS_DUELS",
+  ],
 };
 
 const FRIEND_LINK_HOST: Record<Game, string> = {

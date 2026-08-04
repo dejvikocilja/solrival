@@ -34,6 +34,22 @@ export const RULE_META: Record<RuleTemplate, { label: string; summary: string }>
     label: "Gem Grab",
     summary: "Hold ten gems and survive the countdown to win.",
   },
+  BS_HEIST: {
+    label: "Heist",
+    summary: "Crack your rival's safe before they crack yours. Most damage wins.",
+  },
+  BS_BOUNTY: {
+    label: "Bounty",
+    summary: "Every knockout raises the stakes. Most stars when time runs out takes it.",
+  },
+  BS_HOT_ZONE: {
+    label: "Hot Zone",
+    summary: "Hold the zones. First side to full control wins the round.",
+  },
+  BS_DUELS: {
+    label: "Duels",
+    summary: "A true 1v1 — three brawlers each, last one standing wins.",
+  },
 };
 
 /** Friendly host shown as a hint when entering a friend link. */
