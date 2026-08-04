@@ -117,7 +117,7 @@ export default function AdminDuelsPage() {
         body:    JSON.stringify({ action: confirmDuel.action }),
       })
       setConfirmDuel(null)
-      void fetchDuels(filters, page)
+      void fetchDuels(filters, page, dates)
     } finally {
       setActionLoading(false)
     }

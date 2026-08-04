@@ -118,7 +118,7 @@ export default function AdminVerificationPage() {
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ action: "rerun" }),
     })
-    void fetchJobs(status, page)
+    void fetchJobs(status, page, dates)
   }
 
   // ── Columns ──────────────────────────────────────────────────────────────

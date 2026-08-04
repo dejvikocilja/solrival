@@ -239,7 +239,7 @@ export default function AdminDisputesPage() {
       body:    JSON.stringify({ resolution, outcome }),
     })
     setResolving(null)
-    void fetchDisputes(filter, page)
+    void fetchDisputes(filter, page, dates)
   }
 
   const columns: Column<AdminDispute>[] = [
