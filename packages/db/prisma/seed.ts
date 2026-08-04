@@ -72,6 +72,38 @@ const RULES: Array<{
     description: "Gem Grab friendly room. Winner = victory result.",
     verificationConfig: { type: "friendly", event: "gemGrab", resultField: "result" },
   },
+  {
+    game: Game.BRAWL_STARS,
+    template: RuleTemplate.BS_HEIST,
+    mode: "heist",
+    displayName: "Heist",
+    description: "Heist friendly battle. Winner = the team that does more safe damage.",
+    verificationConfig: { type: "friendly", event: "heist", resultField: "result", gameMode: ["heist"] },
+  },
+  {
+    game: Game.BRAWL_STARS,
+    template: RuleTemplate.BS_BOUNTY,
+    mode: "bounty",
+    displayName: "Bounty",
+    description: "Bounty friendly battle. Winner = the team with more stars at time.",
+    verificationConfig: { type: "friendly", event: "bounty", resultField: "result", gameMode: ["bounty"] },
+  },
+  {
+    game: Game.BRAWL_STARS,
+    template: RuleTemplate.BS_HOT_ZONE,
+    mode: "hotZone",
+    displayName: "Hot Zone",
+    description: "Hot Zone friendly battle. Winner = the team that controls the zones to 100%.",
+    verificationConfig: { type: "friendly", event: "hotZone", resultField: "result", gameMode: ["hotZone", "hotzone"] },
+  },
+  {
+    game: Game.BRAWL_STARS,
+    template: RuleTemplate.BS_DUELS,
+    mode: "duels",
+    displayName: "Duels",
+    description: "Duels friendly battle — a true 1v1 with three brawlers each. Winner = last standing.",
+    verificationConfig: { type: "friendly", event: "duels", resultField: "result", gameMode: ["duels", "duel"] },
+  },
 ];
 
 async function main() {

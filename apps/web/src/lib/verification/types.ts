@@ -40,6 +40,16 @@ export interface DuelVerificationContext {
    * Examples: `'ladder'`, `'casual'`, `'ranked'`, `'knockout'`.
    */
   gameMode: string
+  /**
+   * Additional in-game mode names that satisfy this duel, beyond `gameMode`.
+   *
+   * Supercell exposes the same mode under several names (Brawl Ball appears as
+   * both `brawlBall` and `brawlBall5V5`; Clash Royale suffixes ladder variants
+   * like `Draft_Ladder`). Optional and additive: `gameMode` is still checked
+   * first and on its own is enough, so a duel that verified before continues
+   * to verify identically.
+   */
+  gameModeAliases?: string[]
   /** Supercell player tag for the duel creator — must include `#`. */
   player1Tag: string
   /** Supercell player tag for the opponent — must include `#`. */

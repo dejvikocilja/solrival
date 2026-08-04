@@ -20,6 +20,7 @@ import {
   applyDuelRefund,
   markDuelDisputed,
 } from '@/server/services/duel/settlement'
+import { readModeAliases } from '@/lib/verification/mode-aliases'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ interface DuelRow {
   status: 'ACTIVE' | 'VERIFYING'
   game: string              // 'CLASH_ROYALE' | 'BRAWL_STARS'
   gameMode: string          // rule.mode — the canonical in-game mode matched in the battle log
+  // Extra mode names accepted for this rule, read from
+  // rule.verificationConfig.gameMode. Empty when the rule declares none.
+  gameModeAliases: string[]
   creatorId: string
   opponentId: string
   // Supercell tags (with #). Null when a participant never linked a game
@@ -69,7 +73,7 @@ async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
     include: {
       creatorGameAccount: { select: { inGameTag: true } },
       opponentGameAccount: { select: { inGameTag: true } },
-      rule: { select: { mode: true } },
+      rule: { select: { mode: true, verificationConfig: true } },
     },
   })
 
@@ -85,6 +89,7 @@ async function loadDuelRow(duelId: string): Promise<DuelRow | null> {
     status: duel.status as 'ACTIVE' | 'VERIFYING',
     game: duel.game,
     gameMode: duel.rule.mode,
+    gameModeAliases: readModeAliases(duel.rule.verificationConfig),
     creatorId: duel.creatorId,
     opponentId: duel.opponentId,
     creatorPlayerTag: duel.creatorGameAccount?.inGameTag ?? null,
@@ -149,6 +154,7 @@ function buildContext(duel: DuelRow, creatorTag: string, opponentTag: string): D
     duelId: duel.id,
     gameId: toGameId(duel.game),
     gameMode: duel.gameMode,
+    gameModeAliases: duel.gameModeAliases,
     player1Tag: creatorTag,
     player2Tag: opponentTag,
     acceptedAt,

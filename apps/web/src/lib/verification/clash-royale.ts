@@ -22,7 +22,10 @@ interface CRBattleTeam extends Array<CRBattleTeamMember> {}
 
 interface CRBattleEntry {
   battleTime: string            // e.g. "20240101T120000.000Z"
-  type?: string                 // mode identifier, e.g. "PvP", "casual1v1"
+  /** How the battle was played: "PvP", "casual1v1", "friendly"… NOT the mode. */
+  type?: string
+  /** The actual in-game mode, e.g. { id: 72000006, name: "Draft_Ladder" }. */
+  gameMode?: { id?: number; name?: string }
   team?: CRBattleTeam           // requesting player's team
   opponent?: CRBattleTeam       // opposing team
 }
@@ -48,12 +51,23 @@ function parseBattleTime(raw: string): Date {
 }
 
 /**
- * Normalises a CR battle `type` string to a lowercase form used for
- * matching against `DuelVerificationContext.gameMode`.
+ * Normalises a CR battle `type` string (how the battle was played).
  *
- * The CR API uses varied strings; this maps the common ones but falls
- * back to a lowercased slug for anything unrecognised.
+ * NOTE: this is the battle TYPE, not the game mode. It is only used as a
+ * fallback for `BattleRecord.mode` when the API omits `gameMode.name`.
  */
+/**
+ * The mode name the engine matches against, preferring the real game mode and
+ * falling back to the battle type. Emitted raw (not lowercased): the engine
+ * canonicalises both sides via `normalizeGameMode`, and keeping the API's own
+ * spelling makes logs and rule configs directly comparable.
+ */
+function extractMode(e: CRBattleEntry): string {
+  const name = e.gameMode?.name
+  if (typeof name === 'string' && name.trim().length > 0) return name.trim()
+  return normaliseMode(e.type)
+}
+
 function normaliseMode(raw: string | undefined): string {
   if (!raw) return 'unknown'
   const lower = raw.toLowerCase()
@@ -149,7 +163,15 @@ export async function fetchClashRoyaleBattles(playerTag: string): Promise<Battle
     results.push({
       battleTime,
       gameId: 'clash-royale',
-      mode: normaliseMode(e.type),
+      // The mode the duel rule is matched against.
+      //
+      // Previously this used `e.type`, which is the battle TYPE ("PvP",
+      // "friendly") rather than the mode. Every CR rule stores a mode name
+      // ("Draft", "TripleDraft"), so the comparison could never succeed and no
+      // Clash Royale duel could ever verify. `gameMode.name` is the real mode;
+      // `type` remains the fallback for entries that omit it, which keeps the
+      // old behaviour rather than emitting "unknown".
+      mode: extractMode(e),
       player1Tag: tags.player1Tag,
       player2Tag: tags.player2Tag,
       winnerTag,

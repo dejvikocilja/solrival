@@ -76,8 +76,17 @@ function battlesAreSameTime(battleA: BattleRecord, battleB: BattleRecord): boole
  * Both sides pass through normalizeGameMode so representation differences
  * ("gemGrab" vs "gem-grab" vs "Gem Grab") can never cause a false mismatch.
  */
-function modeMatches(battle: BattleRecord, expectedMode: string): boolean {
-  return normalizeGameMode(battle.mode) === normalizeGameMode(expectedMode)
+function modeMatches(
+  battle: BattleRecord,
+  expectedMode: string,
+  aliases?: readonly string[],
+): boolean {
+  const actual = normalizeGameMode(battle.mode)
+  if (actual === normalizeGameMode(expectedMode)) return true
+  // Aliases are consulted only after the canonical mode fails, so behaviour for
+  // every existing rule (which has no aliases) is byte-for-byte unchanged.
+  if (!aliases) return false
+  return aliases.some((a) => normalizeGameMode(a) === actual)
 }
 
 /**
@@ -138,7 +147,7 @@ async function fetchBattles(
 export async function findMatchingBattle(
   ctx: DuelVerificationContext,
 ): Promise<BattleRecord | null> {
-  const { gameId, gameMode, player1Tag, player2Tag, acceptedAt } = ctx
+  const { gameId, gameMode, gameModeAliases, player1Tag, player2Tag, acceptedAt } = ctx
 
   // Fetch both battle logs concurrently
   const [p1Battles, p2Battles] = await Promise.all([
@@ -164,7 +173,7 @@ export async function findMatchingBattle(
     if (p1Battle.battleTime.getTime() <= acceptedAt.getTime()) continue
 
     // Rule 2: correct game mode
-    if (!modeMatches(p1Battle, gameMode)) continue
+    if (!modeMatches(p1Battle, gameMode, gameModeAliases)) continue
 
     // Rule 1: both players present in this battle
     if (!battleInvolvesPlayers(p1Battle, player1Tag, player2Tag)) continue

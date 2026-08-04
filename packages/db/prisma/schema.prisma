@@ -45,6 +45,10 @@ enum RuleTemplate {
   BS_KNOCKOUT
   BS_BRAWL_BALL
   BS_GEM_GRAB
+  BS_HEIST
+  BS_BOUNTY
+  BS_HOT_ZONE
+  BS_DUELS
 }
 
 enum DuelVisibility {
