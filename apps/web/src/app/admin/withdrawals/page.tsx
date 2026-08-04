@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Banknote } from "lucide-react";
 import { DataTable, type Column } from "@/components/admin/DataTable";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { toast } from "sonner";
 import { DateRangeFilter } from "@/components/admin/DateRangeFilter";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ConfirmModal } from "@/components/admin/ConfirmModal";
@@ -66,6 +67,22 @@ export default function AdminWithdrawalsPage() {
     void load();
   }, [load]);
 
+  // The payout keeper claims APPROVED rows on its own schedule, so a row an
+  // operator is looking at can be paid out from under them. Without a refresh
+  // the table keeps offering Reject and Pay out for a row that is already
+  // COMPLETED, and the click fails with an error the operator can't explain.
+  // Polling closes that window; the server-side status guards remain the real
+  // protection, and money still cannot move for a non-APPROVED row.
+  useEffect(() => {
+    const t = setInterval(() => {
+      // Don't refresh under an open confirmation dialog — swapping the row out
+      // mid-decision is worse than briefly stale data.
+      if (review || payout || submitting || paying) return;
+      void load();
+    }, 15_000);
+    return () => clearInterval(t);
+  }, [load, review, payout, submitting, paying]);
+
   const submitReview = async () => {
     if (!review) return;
     setSubmitting(true);
@@ -76,8 +93,29 @@ export default function AdminWithdrawalsPage() {
         credentials: "same-origin",
         body: JSON.stringify({ decision: review.decision }),
       });
-      if (!res.ok) throw new Error("Failed");
+
+      if (!res.ok) {
+        // Surface the server's actual reason. Throwing a bare "Failed" here
+        // discarded it and escalated to the Next.js error overlay, which told
+        // the operator nothing about a decision involving someone's money —
+        // the most common cause is a lost race (the payout keeper claimed the
+        // row first), and that reason has to reach the screen.
+        const body = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        toast.error(body?.error?.message ?? "Could not complete review");
+        // Refresh regardless: the row's real status has almost certainly moved,
+        // and leaving stale state on screen is what invites the next
+        // mis-click.
+        await load();
+        return;
+      }
+
+      toast.success(review.decision === "APPROVE" ? "Withdrawal approved" : "Withdrawal rejected");
       setReview(null);
+      await load();
+    } catch {
+      toast.error("Network error — check the connection and try again");
       await load();
     } finally {
       setSubmitting(false);
@@ -95,12 +133,18 @@ const submitPayout = async () => {
       });
       if (!res.ok) {
         const j = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        throw new Error(j?.error?.message ?? "Payout failed");
+        toast.error(j?.error?.message ?? "Payout failed");
+        // Same reasoning as review: re-read the row so the operator sees why.
+        await load();
+        setPayout(null);
+        return;
       }
+      toast.success("Payout sent");
       setPayout(null);
       await load();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Payout failed");
+    } catch {
+      toast.error("Network error — check the connection and try again");
+      await load();
     } finally {
       setPaying(false);
     }
