@@ -4,6 +4,7 @@ import { prisma } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { createTournament, toTournamentView } from "@/server/services/tournament/service"
 import { handle, ok } from "@/server/http/respond"
+import { parseDateRange } from "@/server/http/date-range"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -41,8 +42,12 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "25", 10)))
     const skip  = (page - 1) * limit
 
+    const createdAt = parseDateRange(url.searchParams)
+    const where     = createdAt ? { createdAt } : {}
+
     const [tournaments, total] = await Promise.all([
       prisma.tournament.findMany({
+        where,
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
@@ -53,7 +58,7 @@ export async function GET(req: NextRequest) {
           rule:           { select: { displayName: true } },
         },
       }),
-      prisma.tournament.count(),
+      prisma.tournament.count({ where }),
     ])
 
     const data = tournaments.map((t) => ({

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { DataTable, type Column } from "@/components/admin/DataTable"
 import { StatusBadge }   from "@/components/admin/StatusBadge"
+import { DateRangeFilter } from "@/components/admin/DateRangeFilter"
 import { EmptyState }    from "@/components/admin/EmptyState"
 import { ConfirmModal }  from "@/components/admin/ConfirmModal"
 import { DuelSlideOver } from "@/components/admin/DuelSlideOver"
@@ -67,12 +68,15 @@ export default function AdminDuelsPage() {
   const [meta,        setMeta]        = useState<Meta>({ total: 0, page: 1, limit: 25 })
   const [loading,     setLoading]     = useState(true)
   const [filters,     setFilters]     = useState<Filters>({ status: "all", game: "all" })
+  // Date bounds live outside `filters` because they are free-text, not enum
+  // options, and the API treats them as a separate concern.
+  const [dates,       setDates]       = useState({ from: "", to: "" })
   const [page,        setPage]        = useState(1)
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
   const [confirmDuel, setConfirmDuel] = useState<{ id: string; action: "force-refund" } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const fetchDuels = useCallback(async (f: Filters, p: number) => {
+  const fetchDuels = useCallback(async (f: Filters, p: number, d: { from: string; to: string }) => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
@@ -81,6 +85,8 @@ export default function AdminDuelsPage() {
         page:   String(p),
         limit:  "25",
       })
+      if (d.from) params.set("from", d.from)
+      if (d.to)   params.set("to",   d.to)
       const res  = await fetch(`/api/admin/duels?${params}`)
       const json = await res.json()
       setDuels(json.data ?? [])
@@ -93,8 +99,8 @@ export default function AdminDuelsPage() {
   }, [])
 
   useEffect(() => {
-    void fetchDuels(filters, page)
-  }, [filters, page, fetchDuels])
+    void fetchDuels(filters, page, dates)
+  }, [filters, page, dates, fetchDuels])
 
   function handleFilter(key: keyof Filters, value: string) {
     setFilters((f) => ({ ...f, [key]: value }))
@@ -215,6 +221,14 @@ export default function AdminDuelsPage() {
           value={filters.game}
           onChange={(v) => handleFilter("game", v)}
           options={GAME_OPTIONS}
+        />
+        <DateRangeFilter
+          from={dates.from}
+          to={dates.to}
+          onChange={(next) => {
+            setDates(next)
+            setPage(1)
+          }}
         />
         <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} duels

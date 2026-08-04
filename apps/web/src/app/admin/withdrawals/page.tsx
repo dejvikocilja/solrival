@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Banknote } from "lucide-react";
 import { DataTable, type Column } from "@/components/admin/DataTable";
 import { StatusBadge } from "@/components/admin/StatusBadge";
+import { DateRangeFilter } from "@/components/admin/DateRangeFilter";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { ConfirmModal } from "@/components/admin/ConfirmModal";
 
@@ -36,6 +37,7 @@ export default function AdminWithdrawalsPage() {
   const [meta, setMeta] = useState<Meta>({ total: 0, page: 1, limit: 25 });
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [dates, setDates] = useState({ from: "", to: "" });
 
   // Review modal state
   const [review, setReview] = useState<{ row: AdminWithdrawal; decision: "APPROVE" | "REJECT" } | null>(null);
@@ -46,7 +48,10 @@ export default function AdminWithdrawalsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/withdrawals?status=${status}&page=${page}&limit=25`, {
+      const params = new URLSearchParams({ status, page: String(page), limit: "25" });
+      if (dates.from) params.set("from", dates.from);
+      if (dates.to) params.set("to", dates.to);
+      const res = await fetch(`/api/admin/withdrawals?${params.toString()}`, {
         credentials: "same-origin",
       });
       const json = await res.json();
@@ -55,7 +60,7 @@ export default function AdminWithdrawalsPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, page]);
+  }, [status, page, dates]);
 
   useEffect(() => {
     void load();
@@ -217,6 +222,15 @@ const submitPayout = async () => {
             </button>
           ))}
         </div>
+        <DateRangeFilter
+          from={dates.from}
+          to={dates.to}
+          onChange={(next) => {
+            setDates(next);
+            setPage(1);
+          }}
+          label="Requested"
+        />
         <span className="ml-auto text-caption text-faint">{meta.total.toLocaleString()} requests</span>
       </div>
 

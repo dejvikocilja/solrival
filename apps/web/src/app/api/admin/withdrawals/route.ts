@@ -4,6 +4,7 @@ import { WITHDRAWAL_STATUSES } from "@solrival/shared";
 import { requireAdmin } from "@/server/auth/session";
 import { listWithdrawalQueue } from "@/server/services/withdrawal/service";
 import { handle, ok } from "@/server/http/respond";
+import { parseDateRange } from "@/server/http/date-range";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "25", 10)));
 
-    return ok(await listWithdrawalQueue({ status, page, limit }));
+    const createdAt = parseDateRange(url.searchParams);
+
+    return ok(await listWithdrawalQueue({ status, page, limit, createdAt }));
   });
 }

@@ -424,8 +424,13 @@ export async function listWithdrawalQueue(opts: {
   status?: WithdrawalStatus;
   page: number;
   limit: number;
+  /** Inclusive whole-day UTC bounds on createdAt. */
+  createdAt?: { gte?: Date; lte?: Date };
 }) {
-  const where = opts.status ? { status: opts.status } : {};
+  const where = {
+    ...(opts.status ? { status: opts.status } : {}),
+    ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
+  };
 
   // Action queues are worked oldest-first (FIFO — fair to the longest-waiting
   // player). Terminal/history views (COMPLETED / REJECTED / FAILED) and the

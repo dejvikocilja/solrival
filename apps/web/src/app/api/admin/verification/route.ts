@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
 import { prisma, type VerificationJobStatus } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { handle, ok } from "@/server/http/respond"
+import { parseDateRange } from "@/server/http/date-range"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -24,7 +25,11 @@ export async function GET(req: NextRequest) {
     const skip         = (page - 1) * limit
 
     const statusIn = statusFilter !== "all" ? STATUS_MAP[statusFilter] : undefined
-    const where    = statusIn ? { status: { in: statusIn } } : {}
+    const createdAt = parseDateRange(url.searchParams)
+    const where     = {
+      ...(statusIn  ? { status: { in: statusIn } } : {}),
+      ...(createdAt ? { createdAt }                : {}),
+    }
 
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
 

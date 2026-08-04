@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useState } from "react"
 import { DataTable, type Column } from "@/components/admin/DataTable"
 import { StatusBadge }  from "@/components/admin/StatusBadge"
 import { StatCard }     from "@/components/admin/StatCard"
+import { DateRangeFilter } from "@/components/admin/DateRangeFilter"
 import { EmptyState }   from "@/components/admin/EmptyState"
 import { Flag }         from "lucide-react"
 
@@ -198,11 +199,14 @@ export default function AdminDisputesPage() {
   const [page,       setPage]       = useState(1)
   const [resolving,  setResolving]  = useState<AdminDispute | null>(null)
   const [openCount,  setOpenCount]  = useState<number>(0)
+  const [dates,      setDates]      = useState({ from: "", to: "" })
 
-  const fetchDisputes = useCallback(async (f: string, p: number) => {
+  const fetchDisputes = useCallback(async (f: string, p: number, d: { from: string; to: string }) => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ status: f, page: String(p), limit: "25" })
+      if (d.from) params.set("from", d.from)
+      if (d.to)   params.set("to",   d.to)
       const res    = await fetch(`/api/admin/disputes?${params}`)
       const json   = await res.json()
       setDisputes(json.data ?? [])
@@ -216,8 +220,8 @@ export default function AdminDisputesPage() {
   }, [])
 
   useEffect(() => {
-    void fetchDisputes(filter, page)
-  }, [filter, page, fetchDisputes])
+    void fetchDisputes(filter, page, dates)
+  }, [filter, page, dates, fetchDisputes])
 
   // Also fetch open count when showing "all"
   useEffect(() => {
@@ -371,6 +375,11 @@ export default function AdminDisputesPage() {
             </button>
           ))}
         </div>
+        <DateRangeFilter
+          from={dates.from}
+          to={dates.to}
+          onChange={(next) => { setDates(next); setPage(1) }}
+        />
         <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} disputes
         </span>

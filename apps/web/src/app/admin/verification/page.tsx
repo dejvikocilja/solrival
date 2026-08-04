@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { DataTable, type Column } from "@/components/admin/DataTable"
 import { StatusBadge }  from "@/components/admin/StatusBadge"
 import { StatCard }     from "@/components/admin/StatCard"
+import { DateRangeFilter } from "@/components/admin/DateRangeFilter"
 import { EmptyState }   from "@/components/admin/EmptyState"
 import { ShieldCheck }  from "lucide-react"
 
@@ -67,12 +68,20 @@ export default function AdminVerificationPage() {
   const [status,  setStatus]  = useState("all")
   const [page,    setPage]    = useState(1)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [dates,   setDates]   = useState({ from: "", to: "" })
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const fetchJobs = useCallback(async (s: string, p: number, silent = false) => {
+  const fetchJobs = useCallback(async (
+    s: string,
+    p: number,
+    d: { from: string; to: string },
+    silent = false,
+  ) => {
     if (!silent) setLoading(true)
     try {
       const params = new URLSearchParams({ status: s, page: String(p), limit: "25" })
+      if (d.from) params.set("from", d.from)
+      if (d.to)   params.set("to",   d.to)
       const res    = await fetch(`/api/admin/verification?${params}`)
       const json   = await res.json()
       setJobs(json.data   ?? [])
@@ -88,18 +97,18 @@ export default function AdminVerificationPage() {
 
   // Initial load + status/page changes
   useEffect(() => {
-    void fetchJobs(status, page)
-  }, [status, page, fetchJobs])
+    void fetchJobs(status, page, dates)
+  }, [status, page, dates, fetchJobs])
 
   // 10-second polling — silent refresh in background
   useEffect(() => {
     pollRef.current = setInterval(() => {
-      void fetchJobs(status, page, true)
+      void fetchJobs(status, page, dates, true)
     }, POLL_INTERVAL_MS)
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [status, page, fetchJobs])
+  }, [status, page, dates, fetchJobs])
 
   async function rerunVerification(jobId: string) {
     // TODO: wire up /api/admin/verification/:id/rerun once the verifier queue
@@ -246,6 +255,11 @@ export default function AdminVerificationPage() {
             </button>
           ))}
         </div>
+        <DateRangeFilter
+          from={dates.from}
+          to={dates.to}
+          onChange={(next) => { setDates(next); setPage(1) }}
+        />
         <span className="ml-auto text-caption text-faint">
           {meta.total.toLocaleString()} jobs
         </span>

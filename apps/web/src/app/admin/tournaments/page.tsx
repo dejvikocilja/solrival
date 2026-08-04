@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { DataTable, type Column } from "@/components/admin/DataTable"
 import { StatusBadge }  from "@/components/admin/StatusBadge"
+import { DateRangeFilter } from "@/components/admin/DateRangeFilter"
 import { EmptyState }   from "@/components/admin/EmptyState"
 import { ConfirmModal } from "@/components/admin/ConfirmModal"
 import { Trophy }       from "lucide-react"
@@ -43,16 +44,25 @@ type ConfirmAction = { id: string; name: string; action: "cancel" | "start" }
 
 export default function AdminTournamentsPage() {
   const [tournaments, setTournaments] = useState<AdminTournament[]>([])
+  // The route has always paginated; the UI simply never sent a page or
+  // rendered a pager, so only the first 25 were ever reachable.
+  const [meta,        setMeta]        = useState({ total: 0, page: 1, limit: 25 })
+  const [page,        setPage]        = useState(1)
+  const [dates,       setDates]       = useState({ from: "", to: "" })
   const [loading,     setLoading]     = useState(true)
   const [confirm,     setConfirm]     = useState<ConfirmAction | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
 
-  const fetchTournaments = useCallback(async () => {
+  const fetchTournaments = useCallback(async (p: number, d: { from: string; to: string }) => {
     setLoading(true)
     try {
-      const res  = await fetch("/api/admin/tournaments")
+      const params = new URLSearchParams({ page: String(p), limit: "25" })
+      if (d.from) params.set("from", d.from)
+      if (d.to)   params.set("to",   d.to)
+      const res  = await fetch(`/api/admin/tournaments?${params}`)
       const json = await res.json()
       setTournaments(json.data ?? [])
+      setMeta(json.meta ?? { total: 0, page: p, limit: 25 })
     } catch {
       setTournaments([])
     } finally {
@@ -60,7 +70,7 @@ export default function AdminTournamentsPage() {
     }
   }, [])
 
-  useEffect(() => { void fetchTournaments() }, [fetchTournaments])
+  useEffect(() => { void fetchTournaments(page, dates) }, [page, dates, fetchTournaments])
 
   async function handleAction() {
     if (!confirm) return
@@ -72,7 +82,7 @@ export default function AdminTournamentsPage() {
         body:    JSON.stringify({ action: confirm.action }),
       })
       setConfirm(null)
-      void fetchTournaments()
+      void fetchTournaments(page, dates)
     } finally {
       setActionLoading(false)
     }
@@ -207,12 +217,28 @@ export default function AdminTournamentsPage() {
         </p>
       </div>
 
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangeFilter
+          from={dates.from}
+          to={dates.to}
+          onChange={(next) => { setDates(next); setPage(1) }}
+        />
+        <span className="ml-auto text-caption text-faint">
+          {meta.total.toLocaleString()} tournaments
+        </span>
+      </div>
+
       {/* Table */}
       {!loading && tournaments.length === 0 ? (
         <EmptyState
           icon={<Trophy className="h-5 w-5" />}
-          title="No tournaments yet"
-          description="Create a tournament from the platform configuration panel."
+          title={dates.from || dates.to ? "No tournaments in this range" : "No tournaments yet"}
+          description={
+            dates.from || dates.to
+              ? "Try widening the date range."
+              : "Create a tournament from the platform configuration panel."
+          }
         />
       ) : (
         <DataTable
@@ -220,6 +246,12 @@ export default function AdminTournamentsPage() {
           rows={tournaments}
           rowKey={(t) => t.id}
           loading={loading}
+          pagination={{
+            page:   meta.page,
+            total:  meta.total,
+            limit:  meta.limit,
+            onPage: (p) => setPage(p),
+          }}
         />
       )}
 

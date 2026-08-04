@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
 import { prisma, type DuelStatus, type Game } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { handle, ok } from "@/server/http/respond"
+import { parseDateRange } from "@/server/http/date-range"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -46,9 +47,13 @@ export async function GET(req: NextRequest) {
     const statusIn = statusFilter !== "all" ? STATUS_FILTER_MAP[statusFilter] : undefined
     const gameIn   = gameFilter   !== "all" ? GAME_FILTER_MAP[gameFilter]     : undefined
 
+    // Inclusive whole-day UTC bounds; malformed values are ignored, not rejected.
+    const createdAt = parseDateRange(url.searchParams)
+
     const where = {
-      ...(statusIn ? { status: { in: statusIn } } : {}),
-      ...(gameIn   ? { game: gameIn }              : {}),
+      ...(statusIn  ? { status: { in: statusIn } } : {}),
+      ...(gameIn    ? { game: gameIn }             : {}),
+      ...(createdAt ? { createdAt }                : {}),
     }
 
     const [duels, total] = await Promise.all([

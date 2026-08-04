@@ -2,6 +2,7 @@ import { type NextRequest } from "next/server"
 import { prisma, type DisputeStatus } from "@solrival/db"
 import { requireAdmin } from "@/server/auth/session"
 import { handle, ok } from "@/server/http/respond"
+import { parseDateRange } from "@/server/http/date-range"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -37,7 +38,11 @@ export async function GET(req: NextRequest) {
       statusFilter === "resolved" ? RESOLVED_STATUSES :
       undefined // all
 
-    const where = statusIn ? { status: { in: statusIn } } : {}
+    const createdAt = parseDateRange(url.searchParams)
+    const where = {
+      ...(statusIn  ? { status: { in: statusIn } } : {}),
+      ...(createdAt ? { createdAt }                : {}),
+    }
 
     const [disputes, total] = await Promise.all([
       prisma.dispute.findMany({
