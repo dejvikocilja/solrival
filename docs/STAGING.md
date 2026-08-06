@@ -164,7 +164,7 @@ Four sweeps must run continuously. **Nothing works without them**: deposits neve
 | Endpoint | How often | Secret to use | Why |
 |---|---|---|---|
 | `/api/internal/duels/verify` | every **1 min** | `VERIFY_CRON_SECRET` | settles duels — moves money |
-| `/api/internal/withdrawals/process` | every **2 min** | `WITHDRAWAL_CRON_SECRET` | pays out withdrawals |
+| `/api/internal/withdrawals/process` | every **2 min** | `WITHDRAWAL_CRON_SECRET` | pays out withdrawals — **no-op unless `WITHDRAWAL_AUTO_PAYOUT=true`**; by default payouts are made by an admin clicking **Pay out** |
 | `/api/internal/duels/expire` | every **5 min** | `EXPIRE_CRON_SECRET` | expires unaccepted duels |
 | `/api/internal/deposits/sweep` | every **1 min** | `VERIFY_CRON_SECRET` | credits deposits the browser did not finish — **required**, a missed sweep leaves user SOL in the treasury uncredited |
 

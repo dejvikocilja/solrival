@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { processApprovedWithdrawals } from "@/server/services/withdrawal/service";
+import { withdrawalAutoPayoutEnabled } from "@/server/config/launch-caps";
 import { isAuthorizedCron } from "@/server/guards/internal-auth";
 import { handle, ok, fail } from "@/server/http/respond";
 
@@ -26,6 +27,18 @@ async function runPayouts(req: NextRequest) {
     if (!isAuthorizedCron(req, process.env.WITHDRAWAL_CRON_SECRET)) {
       return fail("UNAUTHORIZED", "Invalid cron secret", 401);
     }
+    // Payout is a human decision by default. Returning 200 (not an error) so a
+    // scheduler polling this endpoint stays green instead of alerting on a
+    // deliberate configuration.
+    if (!withdrawalAutoPayoutEnabled()) {
+      return ok({
+        processed: 0,
+        skipped: true,
+        reason: "Automatic payouts are disabled; approved withdrawals await manual payout.",
+        results: [],
+      });
+    }
+
     const results = await processApprovedWithdrawals();
     return ok({ processed: results.length, results });
   });

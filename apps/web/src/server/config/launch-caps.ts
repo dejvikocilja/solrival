@@ -48,3 +48,24 @@ export function formatSol(lamports: bigint): string {
   if (frac === 0n) return whole.toString();
   return `${whole}.${frac.toString().padStart(9, "0").replace(/0+$/, "")}`;
 }
+
+/**
+ * Whether the payout keeper may send withdrawals automatically.
+ *
+ * Default OFF. Approval and payout are deliberately separate decisions:
+ * approval only records that nothing blocks the request (no open dispute),
+ * while payout irreversibly moves SOL out of the hot treasury. Having the
+ * keeper do both meant every approved withdrawal was paid within a couple of
+ * minutes with no human in the loop — and it left no practical window to
+ * reject one, since the money was usually gone before an operator could act.
+ *
+ * With this off, approved requests queue for the admin's "Pay out" button.
+ * The manual path is unaffected either way: it calls `processWithdrawal`
+ * directly rather than going through the keeper.
+ *
+ * Set WITHDRAWAL_AUTO_PAYOUT=true to restore unattended payouts (useful for
+ * load testing, or later when volume makes manual review impractical).
+ */
+export function withdrawalAutoPayoutEnabled(): boolean {
+  return (process.env.WITHDRAWAL_AUTO_PAYOUT ?? "").trim().toLowerCase() === "true";
+}

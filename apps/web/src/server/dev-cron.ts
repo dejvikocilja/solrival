@@ -76,6 +76,11 @@ export function startDevCron(): void {
 
   setInterval(() => {
     void safely("withdrawals", async () => {
+      const { withdrawalAutoPayoutEnabled } = await import("@/server/config/launch-caps");
+      // Mirrors the production keeper: without this the dev loop paid out
+      // every approved withdrawal within ~2 minutes, which is what made
+      // payouts look like they happened on their own.
+      if (!withdrawalAutoPayoutEnabled()) return { skipped: "auto payout disabled" };
       const { processApprovedWithdrawals } = await import("@/server/services/withdrawal/service");
       return processApprovedWithdrawals();
     });

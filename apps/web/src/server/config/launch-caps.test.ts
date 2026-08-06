@@ -3,6 +3,7 @@ import {
   launchMaxStakeLamports,
   launchMaxWithdrawalPerDayLamports,
   formatSol,
+  withdrawalAutoPayoutEnabled,
 } from "./launch-caps";
 
 const SOL = 1_000_000_000n;
@@ -43,5 +44,30 @@ describe("launch caps", () => {
     expect(formatSol(5n * SOL)).toBe("5");
     expect(formatSol(500_000_000n)).toBe("0.5");
     expect(formatSol(1_234_500_000n)).toBe("1.2345");
+  });
+});
+
+describe("withdrawalAutoPayoutEnabled", () => {
+  const original = process.env.WITHDRAWAL_AUTO_PAYOUT;
+  afterEach(() => {
+    if (original === undefined) delete process.env.WITHDRAWAL_AUTO_PAYOUT;
+    else process.env.WITHDRAWAL_AUTO_PAYOUT = original;
+  });
+
+  it("is OFF when unset — payout stays a human decision by default", () => {
+    delete process.env.WITHDRAWAL_AUTO_PAYOUT;
+    expect(withdrawalAutoPayoutEnabled()).toBe(false);
+  });
+
+  it("only 'true' enables it, so a typo can never start paying people out", () => {
+    for (const v of ["", "false", "1", "yes", "TRUE ", "on", "enabled"]) {
+      process.env.WITHDRAWAL_AUTO_PAYOUT = v;
+      expect(withdrawalAutoPayoutEnabled()).toBe(v.trim().toLowerCase() === "true");
+    }
+  });
+
+  it("enables on an exact 'true'", () => {
+    process.env.WITHDRAWAL_AUTO_PAYOUT = "true";
+    expect(withdrawalAutoPayoutEnabled()).toBe(true);
   });
 });
