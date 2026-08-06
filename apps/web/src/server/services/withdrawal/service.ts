@@ -16,7 +16,7 @@ import {
 import { PublicKey } from "@solana/web3.js";
 import { applyEntry, CreditError } from "../credits/balance";
 import { launchMaxWithdrawalPerDayLamports, formatSol } from "@/server/config/launch-caps";
-import { sendFromTreasury } from "../../solana/treasury";
+import { sendFromTreasury, TreasuryUnconfirmedError } from "../../solana/treasury";
 
 /** Platform fee on withdrawals, in basis points (NEXT_PUBLIC_WITHDRAWAL_FEE_BPS).
  *  The user receives the amount minus this fee; the fee stays in the treasury. */
@@ -262,7 +262,35 @@ export async function processWithdrawal(withdrawalId: string): Promise<Withdrawa
 
     return completed;
   } catch (err) {
-    // Payout failed — revert the lock and mark FAILED for retry.
+    // The transfer was broadcast but its fate is unknown. Reverting here would
+    // hand the user their balance back while the SOL may already be in their
+    // wallet — a real double-spend of treasury funds. Instead the request is
+    // parked with its signature for a human to settle: the stake stays locked,
+    // and because the payout guard only claims APPROVED rows, nothing will
+    // re-send it in the meantime.
+    if (err instanceof TreasuryUnconfirmedError) {
+      await prisma.withdrawalRequest.updateMany({
+        where: { id: w.id, status: "PROCESSING" },
+        data: { txSignature: err.signature, error: err.message },
+      });
+      console.error({
+        msg: "withdrawal_payout_unconfirmed",
+        withdrawalId: w.id,
+        signature: err.signature,
+        action: "check the signature on-chain, then complete or revert manually",
+      });
+      // Intentionally no user notification: telling someone their withdrawal
+      // failed when it may have succeeded is worse than staying quiet until
+      // it is resolved.
+      throw new WithdrawalError(
+        "PAYOUT_UNCONFIRMED",
+        "Payout was submitted but not confirmed; it is being reconciled",
+        502,
+      );
+    }
+
+    // Payout failed before anything left the treasury — revert the lock and
+    // mark FAILED so the user can try again.
     await prisma.$transaction(async (tx) => {
       await applyEntry(tx, {
         userId: w.userId,

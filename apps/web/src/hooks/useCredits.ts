@@ -145,7 +145,20 @@ export function useDeposit() {
 
       // Pre-flight on the app's cluster: gives a clear message instead of an
       // opaque wallet rejection if the wallet is on the wrong network or low.
-      const balance = BigInt(await connection.getBalance(publicKey));
+      //
+      // Retried and given its own message because this is the first RPC call
+      // of the flow: a provider hiccup here surfaced the raw JSON-RPC 503 to
+      // the user, which reads like the platform is broken rather than the
+      // network being briefly busy. Nothing has been signed at this point, so
+      // retrying is free of any double-spend risk.
+      const balance = BigInt(
+        await withRetries(() => connection.getBalance(publicKey), 3, 800).catch(() => {
+          throw new Error(
+            "Couldn't reach the Solana network just now. This is usually temporary — " +
+              "wait a moment and try again.",
+          );
+        }),
+      );
       if (balance < lamports + FEE_BUFFER_LAMPORTS) {
         throw new Error(
           "Insufficient SOL on the connected network. Make sure your wallet is on the same " +
@@ -153,8 +166,12 @@ export function useDeposit() {
         );
       }
 
-      const { blockhash, lastValidBlockHeight } =
-        await connection.getLatestBlockhash("finalized");
+      // Also pre-signature, so equally safe to retry.
+      const { blockhash, lastValidBlockHeight } = await withRetries(
+        () => connection.getLatestBlockhash("finalized"),
+        3,
+        800,
+      );
       const tx = new Transaction({ feePayer: publicKey, blockhash, lastValidBlockHeight }).add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
