@@ -152,10 +152,20 @@ export function useDeposit() {
       // network being briefly busy. Nothing has been signed at this point, so
       // retrying is free of any double-spend risk.
       const balance = BigInt(
-        await withRetries(() => connection.getBalance(publicKey), 3, 800).catch(() => {
+        await withRetries(() => connection.getBalance(publicKey), 3, 800).catch((e: unknown) => {
+          // Keep the underlying reason: blanket-replacing it hid whether the
+          // endpoint was overloaded, unreachable, or misconfigured, which is
+          // exactly what an operator needs to tell those apart.
+          console.error({ msg: "deposit_preflight_balance_failed", err: e });
+          const detail = e instanceof Error ? e.message : String(e);
+          const overloaded = /50[234]|429|service unavailable|too many requests|rate limit/i.test(
+            detail,
+          );
           throw new Error(
-            "Couldn't reach the Solana network just now. This is usually temporary — " +
-              "wait a moment and try again.",
+            overloaded
+              ? "The Solana RPC endpoint is overloaded right now. This is the public endpoint " +
+                "rate-limiting; switching to a dedicated RPC provider fixes it permanently."
+              : `Couldn't reach the Solana network: ${detail.slice(0, 200)}`,
           );
         }),
       );
