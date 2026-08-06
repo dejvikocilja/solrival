@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ruleTemplateSchema, RULES_BY_GAME, type RuleTemplate } from "./schemas";
+import {
+  ruleTemplateSchema,
+  RULES_BY_GAME,
+  UNAVAILABLE_TEMPLATES,
+  type RuleTemplate,
+} from "./schemas";
 
 /**
  * Rule templates are declared in three places that must agree:
@@ -20,8 +25,15 @@ describe("rule template registries stay in sync", () => {
   const declared = ruleTemplateSchema.options as readonly RuleTemplate[];
   const offered = Object.values(RULES_BY_GAME).flat();
 
-  it("offers every declared template in exactly one game", () => {
-    expect([...offered].sort()).toEqual([...declared].sort());
+  it("accounts for every declared template — either offered, or explicitly withheld", () => {
+    // Equality (not subset) on purpose: a new template that is neither offered
+    // nor listed as unavailable is almost certainly one someone forgot to wire
+    // up, which is how four Brawl Stars modes once shipped invisible.
+    expect([...offered, ...UNAVAILABLE_TEMPLATES].sort()).toEqual([...declared].sort());
+  });
+
+  it("never offers a template that is also marked unavailable", () => {
+    for (const t of UNAVAILABLE_TEMPLATES) expect(offered).not.toContain(t);
   });
 
   it("assigns each template to the game its prefix implies", () => {

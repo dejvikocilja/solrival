@@ -19,10 +19,17 @@ const RULES: Array<{
   {
     game: Game.CLASH_ROYALE,
     template: RuleTemplate.CR_TRIPLE_DRAFT,
-    mode: "TripleDraft",
+    // Confirmed from a real friendly battle (2026-08-06): selecting "Triple
+    // Draft" in-game yields gameMode.name "Draft_Competitive".
+    mode: "Draft_Competitive",
     displayName: "Triple Draft Friendly Battle",
     description: "Triple draft friendly 1v1. Winner = higher crowns.",
-    verificationConfig: { type: "friendly", gameMode: ["TripleDraft", "TripleElixir_TripleDraft"], resultField: "crowns" },
+    verificationConfig: {
+      type: "friendly",
+      gameMode: ["Draft_Competitive"],
+      deckSelection: "draftCompetitive",
+      resultField: "crowns",
+    },
   },
   {
     game: Game.CLASH_ROYALE,

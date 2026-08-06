@@ -30,9 +30,27 @@ export type RuleTemplate = z.infer<typeof ruleTemplateSchema>;
 export const duelVisibilitySchema = z.enum(["PUBLIC", "PRIVATE"]);
 export type DuelVisibility = z.infer<typeof duelVisibilitySchema>;
 
+/**
+ * Templates that exist but are withheld from the create form.
+ *
+ * A rule is listed here when the platform cannot yet VERIFY it. Clash Royale
+ * rules were seeded with invented mode labels; only Triple Draft has been
+ * matched against a real battlelog so far. Offering the others would let a
+ * player stake SOL on a duel that can never settle, so they stay hidden until
+ * a real battle in that mode confirms its `gameMode.name`.
+ *
+ * The database is the real gate — duel creation requires `enabled = true` — and
+ * this list keeps the UI honest so nobody is offered a dead end.
+ */
+export const UNAVAILABLE_TEMPLATES: RuleTemplate[] = [
+  "CR_DRAFT",
+  "CR_CLASSIC_DECK",
+  "CR_SUDDEN_DEATH",
+];
+
 /** Which rule templates belong to which game (enforced on create). */
 export const RULES_BY_GAME: Record<Game, RuleTemplate[]> = {
-  CLASH_ROYALE: ["CR_TRIPLE_DRAFT", "CR_DRAFT", "CR_CLASSIC_DECK", "CR_SUDDEN_DEATH"],
+  CLASH_ROYALE: ["CR_TRIPLE_DRAFT"],
   BRAWL_STARS: [
     "BS_KNOCKOUT",
     "BS_BRAWL_BALL",
