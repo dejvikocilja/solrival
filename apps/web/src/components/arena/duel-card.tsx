@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Trophy, Gauge, Target, BadgeCheck, ArrowRight } from "lucide-react";
+import { Trophy, Gauge, Target, BadgeCheck, ArrowRight, Eye } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn, formatInt, bpsToPercent } from "@/lib/utils";
@@ -11,13 +11,21 @@ import { ExpiryMeter } from "./expiry-meter";
 
 export function DuelCard({ duel }: { duel: ArenaDuel }) {
   const game = GAME_META[duel.game];
+  // You cannot accept your own challenge — the server rejects it — so offering
+  // "Accept challenge" on your own card promises something the product will
+  // refuse. Own duels get a view affordance instead.
+  const own = duel.isOwn;
 
   // The whole card is the link — bigger tap target on mobile, and there are no
   // nested interactive elements, so the CTA below is a visual affordance only.
   return (
     <Link
       href={`/duels/${duel.id}`}
-      aria-label={`Accept ${game.label} challenge from ${duel.creator.username}`}
+      aria-label={
+        own
+          ? `View your ${game.label} challenge #${duel.shortCode}`
+          : `Accept ${game.label} challenge from ${duel.creator.username}`
+      }
       className="group block rounded-lg focus-visible:focus-ring"
     >
       <Card className="relative overflow-hidden transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-border-strong group-hover:shadow-card-hover">
@@ -84,12 +92,28 @@ export function DuelCard({ duel }: { duel: ArenaDuel }) {
           {/* CTA — visual only; the whole card is the link */}
           <div
             className={cn(
-              "mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-rival px-4 text-sm font-medium text-rival-fg",
-              "shadow-[0_6px_20px_-8px_hsl(var(--rival)/0.9)] transition-all group-hover:brightness-110",
+              "mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-all",
+              own
+                // Neutral surface, not the brand action colour: this is a link
+                // to your own duel, not a call to stake.
+                ? "border border-border bg-surface-2 text-fg group-hover:border-border-strong"
+                : cn(
+                    "bg-rival text-rival-fg",
+                    "shadow-[0_6px_20px_-8px_hsl(var(--rival)/0.9)] group-hover:brightness-110",
+                  ),
             )}
           >
-            Accept challenge
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+            {own ? (
+              <>
+                <Eye className="h-4 w-4" aria-hidden />
+                View your challenge
+              </>
+            ) : (
+              <>
+                Accept challenge
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </>
+            )}
           </div>
         </div>
       </Card>

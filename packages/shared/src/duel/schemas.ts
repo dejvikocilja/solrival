@@ -17,6 +17,12 @@ export const ruleTemplateSchema = z.enum([
   "CR_DRAFT",
   "CR_CLASSIC_DECK",
   "CR_SUDDEN_DEATH",
+  "CR_DOUBLE_ELIXIR",
+  "CR_TRIPLE_ELIXIR",
+  "CR_RAMP_UP",
+  "CR_SEVEN_X_ELIXIR",
+  "CR_RAGE",
+  "CR_MIRROR",
   "BS_KNOCKOUT",
   "BS_BRAWL_BALL",
   "BS_GEM_GRAB",
@@ -42,14 +48,22 @@ export type DuelVisibility = z.infer<typeof duelVisibilitySchema>;
  * The database is the real gate — duel creation requires `enabled = true` — and
  * this list keeps the UI honest so nobody is offered a dead end.
  */
-export const UNAVAILABLE_TEMPLATES: RuleTemplate[] = [
-  "CR_CLASSIC_DECK",
-  "CR_SUDDEN_DEATH",
-];
+export const UNAVAILABLE_TEMPLATES: RuleTemplate[] = [];
 
 /** Which rule templates belong to which game (enforced on create). */
 export const RULES_BY_GAME: Record<Game, RuleTemplate[]> = {
-  CLASH_ROYALE: ["CR_TRIPLE_DRAFT", "CR_DRAFT"],
+  CLASH_ROYALE: [
+    "CR_CLASSIC_DECK",
+    "CR_DRAFT",
+    "CR_TRIPLE_DRAFT",
+    "CR_DOUBLE_ELIXIR",
+    "CR_TRIPLE_ELIXIR",
+    "CR_RAMP_UP",
+    "CR_SEVEN_X_ELIXIR",
+    "CR_RAGE",
+    "CR_MIRROR",
+    "CR_SUDDEN_DEATH",
+  ],
   BRAWL_STARS: [
     "BS_KNOCKOUT",
     "BS_BRAWL_BALL",

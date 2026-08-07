@@ -18,12 +18,22 @@ export type ArenaDuel = {
   expiresAt: string;
   rule: { template: string; displayName: string } | null;
   creator: { username: string; walletShort: string; wins: number; losses: number };
+  /**
+   * True when the signed-in viewer created this duel. Computed server-side
+   * from the session rather than shipped as a creatorId for the client to
+   * compare, so the arena payload never exposes user ids to anonymous callers.
+   */
+  isOwn: boolean;
   stats: { trophies: number | null; accountLevel: number | null; winRateBps: number | null; verified: boolean } | null;
 };
 
 export type ArenaPage = { duels: ArenaDuel[]; nextCursor: string | null };
 
-export async function getArena(q: ListDuelsQuery): Promise<ArenaPage> {
+export async function getArena(
+  q: ListDuelsQuery,
+  /** Signed-in viewer, if any. Anonymous visitors simply own nothing. */
+  viewerId?: string | null,
+): Promise<ArenaPage> {
   const rows = await listJoinableDuels(q);
 
   const duels: ArenaDuel[] = rows.map((d) => {
@@ -38,6 +48,7 @@ export async function getArena(q: ListDuelsQuery): Promise<ArenaPage> {
       platformFeeBps: d.platformFeeBps,
       expiresAt: d.expiresAt.toISOString(),
       rule: d.rule ? { template: d.rule.template, displayName: d.rule.displayName } : null,
+      isOwn: viewerId != null && d.creatorId === viewerId,
       creator: {
         username: d.creator.username,
         walletShort: shortenWallet(d.creator.walletAddress),

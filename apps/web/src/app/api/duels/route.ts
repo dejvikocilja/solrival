@@ -6,6 +6,7 @@ import { rateLimit } from "@/server/guards/rate-limit";
 import { createCreditDuel } from "@/server/services/duel/credit-duel";
 import { getArena } from "@/server/services/duel/arena";
 import { handle, ok, fail } from "@/server/http/respond";
+import { getCurrentUser } from "@/server/auth/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return handle(async () => {
     const q = listDuelsQuerySchema.parse(Object.fromEntries(new URL(req.url).searchParams));
-    return ok(await getArena(q));
+    const viewer = await getCurrentUser();
+    return ok(await getArena(q, viewer?.id ?? null));
   });
 }

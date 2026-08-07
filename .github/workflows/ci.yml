@@ -1,5 +1,8 @@
 name: ci
 on: [push, pull_request]
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   node:
     runs-on: ubuntu-latest

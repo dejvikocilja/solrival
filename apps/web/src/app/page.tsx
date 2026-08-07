@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, BadgeCheck, ShieldCheck, Zap } from "lucide-react";
 import { listDuelsQuerySchema } from "@solrival/shared";
 import { getArena } from "@/server/services/duel/arena";
+import { getCurrentUser } from "@/server/auth/session";
 import { buttonVariants } from "@/components/ui/button";
 import { DuelCard } from "@/components/arena/duel-card";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,10 @@ const STEPS = [
 ];
 
 export default async function HomePage() {
-  const { duels } = await getArena(listDuelsQuerySchema.parse({}));
+  // Anonymous visitors are fine: getCurrentUser returns null and nothing is
+  // marked as owned.
+  const viewer = await getCurrentUser();
+  const { duels } = await getArena(listDuelsQuerySchema.parse({}), viewer?.id ?? null);
   const liveDuels = duels.slice(0, 3);
 
   return (

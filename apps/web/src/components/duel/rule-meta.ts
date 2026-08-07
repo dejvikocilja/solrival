@@ -22,6 +22,30 @@ export const RULE_META: Record<RuleTemplate, { label: string; summary: string }>
     label: "Sudden Death",
     summary: "First tower decides it. No overtime, no draws.",
   },
+  CR_DOUBLE_ELIXIR: {
+    label: "Double Elixir",
+    summary: "Double elixir from the first second. Higher crowns wins.",
+  },
+  CR_TRIPLE_ELIXIR: {
+    label: "Triple Elixir",
+    summary: "Triple elixir, no build-up. Higher crowns wins.",
+  },
+  CR_RAMP_UP: {
+    label: "Ramp Up",
+    summary: "Elixir speed climbs as the match runs. Higher crowns wins.",
+  },
+  CR_SEVEN_X_ELIXIR: {
+    label: "7x Elixir",
+    summary: "Seven times elixir. Fast, loud, decided on crowns.",
+  },
+  CR_RAGE: {
+    label: "Rage",
+    summary: "Everything permanently raged. Higher crowns wins.",
+  },
+  CR_MIRROR: {
+    label: "Mirror",
+    summary: "Identical decks both sides — pure skill. Higher crowns wins.",
+  },
   BS_KNOCKOUT: {
     label: "Knockout",
     summary: "3v3 elimination. No respawns — win two rounds to take the duel.",
