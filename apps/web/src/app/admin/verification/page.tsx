@@ -7,6 +7,7 @@ import { StatCard }     from "@/components/admin/StatCard"
 import { DateRangeFilter } from "@/components/admin/DateRangeFilter"
 import { EmptyState }   from "@/components/admin/EmptyState"
 import { ShieldCheck }  from "lucide-react"
+import { toast } from "sonner"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,14 +112,29 @@ export default function AdminVerificationPage() {
   }, [status, page, dates, fetchJobs])
 
   async function rerunVerification(jobId: string) {
-    // TODO: wire up /api/admin/verification/:id/rerun once the verifier queue
-    // supports ad-hoc re-queue (set status back to QUEUED, bump maxAttempts).
-    await fetch(`/api/admin/verification/${jobId}`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ action: "rerun" }),
-    })
-    void fetchJobs(status, page, dates)
+    try {
+      const res = await fetch(`/api/admin/verification/${jobId}`, {
+        method:      "POST",
+        headers:     { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body:        JSON.stringify({ action: "rerun" }),
+      })
+      // The response was previously discarded entirely, so a 404 from the
+      // missing route looked identical to success: the table refreshed and
+      // nothing had happened.
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null
+        toast.error(body?.error?.message ?? "Could not re-run verification")
+      } else {
+        toast.success("Re-queued — the next sweep will pick it up")
+      }
+    } catch {
+      toast.error("Network error — check the connection and try again")
+    } finally {
+      void fetchJobs(status, page, dates)
+    }
   }
 
   // ── Columns ──────────────────────────────────────────────────────────────

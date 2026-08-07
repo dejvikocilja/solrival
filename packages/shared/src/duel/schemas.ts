@@ -43,14 +43,13 @@ export type DuelVisibility = z.infer<typeof duelVisibilitySchema>;
  * this list keeps the UI honest so nobody is offered a dead end.
  */
 export const UNAVAILABLE_TEMPLATES: RuleTemplate[] = [
-  "CR_DRAFT",
   "CR_CLASSIC_DECK",
   "CR_SUDDEN_DEATH",
 ];
 
 /** Which rule templates belong to which game (enforced on create). */
 export const RULES_BY_GAME: Record<Game, RuleTemplate[]> = {
-  CLASH_ROYALE: ["CR_TRIPLE_DRAFT"],
+  CLASH_ROYALE: ["CR_TRIPLE_DRAFT", "CR_DRAFT"],
   BRAWL_STARS: [
     "BS_KNOCKOUT",
     "BS_BRAWL_BALL",

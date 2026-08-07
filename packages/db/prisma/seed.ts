@@ -34,10 +34,16 @@ const RULES: Array<{
   {
     game: Game.CLASH_ROYALE,
     template: RuleTemplate.CR_DRAFT,
-    mode: "Draft",
+    // Real API name (game_modes.json id 72000005, deck_selection "Draft").
+    mode: "DraftMode",
     displayName: "Draft Friendly Battle",
     description: "Draft friendly 1v1. Winner = higher crowns.",
-    verificationConfig: { type: "friendly", gameMode: ["Draft", "Draft_Ladder"], resultField: "crowns" },
+    verificationConfig: {
+      type: "friendly",
+      gameMode: ["DraftMode"],
+      deckSelection: "draft",
+      resultField: "crowns",
+    },
   },
   {
     game: Game.CLASH_ROYALE,
