@@ -9,7 +9,9 @@
  *  3. Battle timestamp is after the duel acceptance timestamp
  *  4. Battle belongs to the correct game
  *
- * If multiple matching battles exist, the most recent one is returned.
+ * If multiple matching battles exist, the EARLIEST unclaimed one is returned —
+ * see the note in findMatchingBattle. Returning the most recent allowed a loser
+ * to replay and overwrite the result before the sweep ran.
  */
 
 import { prisma } from '@solrival/db'
@@ -202,36 +204,67 @@ export async function findMatchingBattle(
     return null
   }
 
-  // Prefer most recent if multiple matches (shouldn't happen in practice)
-  candidates.sort((a, b) => b.battleTime.getTime() - a.battleTime.getTime())
-
-  const best = candidates[0]
-  // candidates is guaranteed non-empty by the check above
-  if (!best) return null
+  // EARLIEST valid battle wins — never the most recent.
+  //
+  // This previously took the newest candidate, which was exploitable: the
+  // verification sweep runs on a timer, so a player who lost could immediately
+  // play a second friendly in the same mode, win that one, and have the sweep
+  // settle the duel on the later battle. Taking the earliest removes the
+  // re-roll: the first battle both players played after accepting is the one
+  // they agreed to, and nothing played afterwards can displace it.
+  candidates.sort((a, b) => a.battleTime.getTime() - b.battleTime.getTime())
 
   // M-005: deduplicate battles across duels.
-  // Compute a stable key from battle timestamp + both player tags so the same
-  // real-world battle cannot settle two different duels.
-  const battleKey = [
-    best.battleTime.toISOString(),
-    normTag(best.player1Tag),
-    normTag(best.player2Tag),
-  ].join(':')
+  // A stable key from battle timestamp + both player tags, so one real-world
+  // battle cannot settle two different duels.
+  const keyFor = (b: BattleRecord) =>
+    [b.battleTime.toISOString(), normTag(b.player1Tag), normTag(b.player2Tag)].join(':')
 
-  const alreadyClaimed = await prisma.verificationJob.findFirst({
+  // Fetch every claim in one query rather than per-candidate, then walk the
+  // candidates in chronological order and take the first unclaimed one.
+  //
+  // Walking (rather than testing only the earliest) matters when the same two
+  // players legitimately play several duels in one window — back-to-back
+  // tournament matches, or a rematch. Duel A claims the first battle; duel B
+  // must then settle on the SECOND. Testing only the earliest would find it
+  // claimed and give up, leaving duel B permanently unverifiable.
+  const candidateKeys = candidates.map(keyFor)
+  const claims = await prisma.verificationJob.findMany({
     where: {
-      detectedBattleId: battleKey,
+      detectedBattleId: { in: candidateKeys },
       duelId: { not: ctx.duelId },
     },
-    select: { duelId: true },
+    select: { detectedBattleId: true, duelId: true },
   })
+  const claimedBy = new Map(
+    claims
+      .filter((c): c is { detectedBattleId: string; duelId: string } => c.detectedBattleId !== null)
+      .map((c) => [c.detectedBattleId, c.duelId]),
+  )
 
-  if (alreadyClaimed !== null) {
+  let best: BattleRecord | undefined
+  let battleKey = ''
+  for (let i = 0; i < candidates.length; i++) {
+    const key = candidateKeys[i]!
+    const owner = claimedBy.get(key)
+    if (owner === undefined) {
+      best = candidates[i]
+      battleKey = key
+      break
+    }
     console.warn({
       msg: 'verification_engine_battle_already_claimed',
-      battleKey,
-      claimedByDuelId: alreadyClaimed.duelId,
+      battleKey: key,
+      claimedByDuelId: owner,
       currentDuelId: ctx.duelId,
+    })
+  }
+
+  if (!best) {
+    console.info({
+      msg: 'verification_engine_all_candidates_claimed',
+      duelId: ctx.duelId,
+      totalCandidates: candidates.length,
     })
     return null
   }
