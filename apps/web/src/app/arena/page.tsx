@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { listDuelsQuerySchema } from "@solrival/shared";
 import { getArena } from "@/server/services/duel/arena";
+import { getCurrentUser } from "@/server/auth/session";
 import { PageContainer, PageHeader } from "@/components/ui/page-shell";
 import { ArenaControls } from "@/components/arena/arena-controls";
 import { DuelGrid } from "@/components/arena/duel-grid";
@@ -41,7 +42,11 @@ export default async function ArenaPage({
   // Invalid params should degrade to defaults, never error the page.
   const parsed = listDuelsQuerySchema.safeParse(flat);
   const query = parsed.success ? parsed.data : listDuelsQuerySchema.parse({});
-  const { duels } = await getArena(query);
+  // Same as the home arena strip: the viewer's own duels are marked so the card
+  // offers "View your challenge" rather than an accept action it would refuse.
+  // getCurrentUser returns null for signed-out visitors, who own nothing.
+  const viewer = await getCurrentUser();
+  const { duels } = await getArena(query, viewer?.id ?? null);
 
   const isFiltered = FILTER_KEYS.some((k) => flat[k] != null);
 
